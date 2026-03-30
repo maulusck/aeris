@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-rig-ip-switcher  –  NMCLI IP management TUI
-Retro-terminal aesthetic, curses-based, persistent custom IPs.
+rig-ip-switcher – NMCLI IP management TUI
+Retro-terminal aesthetic, curses-based, persistent custom IPs with names.
 """
 import curses
 import subprocess
@@ -17,6 +17,7 @@ import ipaddress
 NMCLI      = "./nmcli"          # Adjust path as needed
 CON_ID     = "eth-operator"
 STATE_FILE = Path.home() / ".rig-ip-switcher.json"
+IFACE      = "eth0"
 
 # ─────────────────────────────────────────────
 #  Color pair indices
@@ -57,22 +58,21 @@ def load_custom_ips():
         return []
 
 def save_custom_ips(entries):
-    custom = [e["ip"] for e in entries if e["type"] == "custom"]
+    custom = [
+        {"name": e["name"], "ip": e["ip"]}
+        for e in entries if e["type"] == "custom"
+    ]
     STATE_FILE.write_text(json.dumps({"custom_ips": custom}, indent=2))
 
 # ─────────────────────────────────────────────
 #  NMCLI helpers
 # ─────────────────────────────────────────────
 def run_nmcli(args, log_lines=None):
-    """Run nmcli, optionally appending command echo to log_lines."""
     cmd_str = "nmcli " + " ".join(args)
     if log_lines is not None:
         log_lines.append(("CMD", f"$ {cmd_str}"))
     try:
-        r = subprocess.run(
-            [NMCLI] + args,
-            capture_output=True, text=True, timeout=15
-        )
+        r = subprocess.run([NMCLI] + args, capture_output=True, text=True, timeout=15)
         return r.stdout.strip(), r.stderr.strip(), r.returncode
     except FileNotFoundError:
         return "", f"{NMCLI}: not found", 1
@@ -80,7 +80,7 @@ def run_nmcli(args, log_lines=None):
         return "", "nmcli timed out", 1
 
 def get_active_ips(con_id):
-    out, err, code = run_nmcli(["con", "show", con_id])
+    out, _, code = run_nmcli(["con", "show", con_id])
     if code != 0:
         return []
     for line in out.splitlines():
@@ -94,19 +94,17 @@ def con_exists(con_id):
     return code == 0
 
 def create_con_if_missing(con_id, iface, log_lines):
-    """Create a bare ethernet connection if it doesn't exist yet."""
     if not con_exists(con_id):
         log_lines.append(("INFO", f"Creating connection '{con_id}'"))
         run_nmcli([
             "con", "add",
-            "type",    "ethernet",
+            "type", "ethernet",
             "con-name", con_id,
-            "ifname",   iface,
+            "ifname", iface,
             "ipv4.method", "manual",
         ], log_lines)
 
-def apply_changes(con_id, entries, selected, log_lines, iface="eth0"):
-    """Atomically mod + up the connection with the chosen IPs."""
+def apply_changes(con_id, entries, selected, log_lines, iface=IFACE):
     ips = [entries[i]["ip"] for i in sorted(selected)]
     if not ips:
         log_lines.append(("ERR", "No IPs selected – nothing to apply"))
@@ -117,7 +115,7 @@ def apply_changes(con_id, entries, selected, log_lines, iface="eth0"):
 
     _, err, code = run_nmcli(
         ["con", "mod", con_id, "ipv4.addresses", ip_str, "ipv4.method", "manual"],
-        log_lines,
+        log_lines
     )
     if code != 0:
         log_lines.append(("ERR", f"mod failed: {err or 'unknown'}"))
@@ -155,26 +153,21 @@ def normalize_ip(ip):
 def init_colors():
     curses.start_color()
     curses.use_default_colors()
-
-    # Try 256-color; fall back gracefully
     try:
-        # Background: near-black  (#0d0d0d → 232)
-        # Amber:  214  Cyan: 51  Green: 82  Red: 196  Grey: 242
-        curses.init_pair(C_HEADER,   curses.COLOR_BLACK,  214)          # amber bar
-        curses.init_pair(C_SEL,      curses.COLOR_BLACK,  51)           # cyan sel
-        curses.init_pair(C_ACTIVE,   82,                  -1)           # green fg
-        curses.init_pair(C_SEL_ACT,  curses.COLOR_BLACK,  82)           # green sel
-        curses.init_pair(C_SECTION,  214,                 -1)           # amber label
-        curses.init_pair(C_LOG_OK,   82,                  -1)
-        curses.init_pair(C_LOG_ERR,  196,                 -1)
-        curses.init_pair(C_LOG_CMD,  242,                 -1)
-        curses.init_pair(C_HINT,     curses.COLOR_BLACK,  236)          # dark bar
-        curses.init_pair(C_DIFF_CUR, 242,                 -1)           # dim grey
-        curses.init_pair(C_DIFF_NEW, 51,                  -1)           # cyan
-        curses.init_pair(C_BORDER,   236,                 -1)           # dark grey
-        curses.init_pair(C_INPUT,    214,                 232)          # amber on near-black
+        curses.init_pair(C_HEADER,   curses.COLOR_BLACK,  214)  # amber bar
+        curses.init_pair(C_SEL,      curses.COLOR_BLACK,  51)   # cyan sel
+        curses.init_pair(C_ACTIVE,   82, -1)                    # green fg
+        curses.init_pair(C_SEL_ACT,  curses.COLOR_BLACK, 82)
+        curses.init_pair(C_SECTION,  214, -1)
+        curses.init_pair(C_LOG_OK,   82, -1)
+        curses.init_pair(C_LOG_ERR,  196, -1)
+        curses.init_pair(C_LOG_CMD,  242, -1)
+        curses.init_pair(C_HINT,     curses.COLOR_BLACK, 236)
+        curses.init_pair(C_DIFF_CUR, 242, -1)
+        curses.init_pair(C_DIFF_NEW, 51, -1)
+        curses.init_pair(C_BORDER,   236, -1)
+        curses.init_pair(C_INPUT,    214, 232)
     except Exception:
-        # 8-color fallback
         curses.init_pair(C_HEADER,   curses.COLOR_BLACK,  curses.COLOR_YELLOW)
         curses.init_pair(C_SEL,      curses.COLOR_BLACK,  curses.COLOR_CYAN)
         curses.init_pair(C_ACTIVE,   curses.COLOR_GREEN,  -1)
@@ -193,7 +186,6 @@ def init_colors():
 #  Safe addstr helper
 # ─────────────────────────────────────────────
 def safe_add(win, y, x, text, attr=0):
-    """Write text clipped to window width; silently ignore boundary errors."""
     try:
         h, w = win.getmaxyx()
         if y < 0 or y >= h or x >= w:
@@ -214,18 +206,11 @@ def hline(win, y, x, ch, n, attr=0):
 #  Input box
 # ─────────────────────────────────────────────
 def curses_input(stdscr, prompt, maxlen=40):
-    """
-    Pop a styled 3-line input box centered near the bottom.
-    Returns the entered string or None on Esc.
-    """
     curses.curs_set(1)
     h, w = stdscr.getmaxyx()
-
     box_w = min(w - 4, maxlen + len(prompt) + 6)
     box_x = (w - box_w) // 2
     box_y = h - 6
-
-    # Draw outer box
     try:
         win = curses.newwin(3, box_w, box_y, box_x)
     except curses.error:
@@ -238,38 +223,28 @@ def curses_input(stdscr, prompt, maxlen=40):
     win.attron(inp_attr)
     win.border()
     win.attroff(inp_attr)
-
     label = f" {prompt} "
     safe_add(win, 1, 2, label, curses.color_pair(C_SECTION) | curses.A_BOLD)
     field_x = 2 + len(label)
     field_w = box_w - field_x - 2
-
     win.refresh()
-
     buffer = ""
     while True:
-        # Draw input field area (clear it first)
         field_str = (buffer + " " * field_w)[:field_w]
         safe_add(win, 1, field_x, field_str, inp_attr)
-        # Position cursor
-        try:
-            win.move(1, field_x + len(buffer))
-        except curses.error:
-            pass
+        try: win.move(1, field_x + len(buffer))
+        except curses.error: pass
         win.refresh()
-
         ch = stdscr.getch()
-        if ch in (10, 13):           # Enter
+        if ch in (10, 13):  # Enter
             curses.curs_set(0)
             del win
-            stdscr.touchwin()
-            stdscr.refresh()
+            stdscr.touchwin(); stdscr.refresh()
             return buffer.strip()
-        elif ch == 27:               # Esc
+        elif ch == 27:  # Esc
             curses.curs_set(0)
             del win
-            stdscr.touchwin()
-            stdscr.refresh()
+            stdscr.touchwin(); stdscr.refresh()
             return None
         elif ch in (curses.KEY_BACKSPACE, 127, 8):
             buffer = buffer[:-1]
@@ -280,198 +255,131 @@ def curses_input(stdscr, prompt, maxlen=40):
 #  TUI Draw
 # ─────────────────────────────────────────────
 KEYS_HINT = (
-    "↑↓/jk:move  SPC:toggle  N:add  D:del  A:apply  R:refresh  Q:quit"
+    "↑↓/jk:move  SPC:toggle  N:add  E:edit  D:del  A:apply  R:refresh  Q:quit"
 )
 
 def draw_ui(stdscr, entries, selected, cursor, log_lines, current_ips, status_msg):
-    stdscr.erase()
-    h, w = stdscr.getmaxyx()
-
-    # ── Title bar ──────────────────────────────
-    title = f"  RIG IP SWITCHER  ▸  {CON_ID}  "
-    safe_add(stdscr, 0, 0, title.ljust(w - 1),
-             curses.color_pair(C_HEADER) | curses.A_BOLD)
-
-    # ── Key hints bar (row 1) ──────────────────
-    safe_add(stdscr, 1, 0, KEYS_HINT.ljust(w - 1),
-             curses.color_pair(C_HINT))
-
-    # ── Diff section (rows 3-4) ────────────────
+    stdscr.erase(); h, w = stdscr.getmaxyx()
+    # Title
+    safe_add(stdscr, 0, 0, f"  RIG IP SWITCHER ▸ {CON_ID}  ".ljust(w-1),
+             curses.color_pair(C_HEADER)|curses.A_BOLD)
+    safe_add(stdscr, 1, 0, KEYS_HINT.ljust(w-1), curses.color_pair(C_HINT))
+    # LIVE/PEND diff
     new_ips = [entries[i]["ip"] for i in sorted(selected)]
-    cur_str = "  LIVE  : " + (", ".join(current_ips) if current_ips else "—")
-    new_str = "  PEND  : " + (", ".join(new_ips)     if new_ips     else "—")
-    safe_add(stdscr, 3, 0, cur_str[:w - 1], curses.color_pair(C_DIFF_CUR))
-    safe_add(stdscr, 4, 0, new_str[:w - 1], curses.color_pair(C_DIFF_NEW) | curses.A_BOLD)
+    cur_str = " LIVE  : " + (", ".join(current_ips) or "—")
+    new_str = " PEND  : " + (", ".join(new_ips) or "—")
+    safe_add(stdscr,3,0,cur_str[:w-1],curses.color_pair(C_DIFF_CUR))
+    safe_add(stdscr,4,0,new_str[:w-1],curses.color_pair(C_DIFF_NEW)|curses.A_BOLD)
+    hline(stdscr,5,0,curses.ACS_HLINE,w-1,curses.color_pair(C_BORDER))
 
-    hline(stdscr, 5, 0, curses.ACS_HLINE, w - 1, curses.color_pair(C_BORDER))
-
-    # ── Entry list ────────────────────────────
-    row = 6
-    prev_type = None
-    for idx, e in enumerate(entries):
+    row = 6; prev_type=None
+    for idx,e in enumerate(entries):
         if e["type"] != prev_type:
-            label = "  PREDEFINED" if e["type"] == "predefined" else "  CUSTOM"
-            safe_add(stdscr, row, 0, label,
-                     curses.color_pair(C_SECTION) | curses.A_BOLD | curses.A_UNDERLINE)
-            row += 1
-            prev_type = e["type"]
-
-        if row >= h - 8:             # leave room for log
-            safe_add(stdscr, row, 0, "  … (more entries)", curses.color_pair(C_LOG_CMD))
-            row += 1
-            break
-
-        is_cur   = idx == cursor
-        is_live  = e["ip"] in current_ips
-        is_sel   = idx in selected
-
+            label = " PREDEFINED" if e["type"]=="predefined" else " CUSTOM"
+            safe_add(stdscr,row,0,label,curses.color_pair(C_SECTION)|curses.A_BOLD|curses.A_UNDERLINE)
+            row +=1; prev_type=e["type"]
+        if row >= h-8:
+            safe_add(stdscr,row,0,"  … (more entries)",curses.color_pair(C_LOG_CMD))
+            row+=1; break
+        is_cur = idx==cursor; is_live = e["ip"] in current_ips; is_sel = idx in selected
         tick = "◉" if is_sel else "○"
-        name = e["name"] if e["type"] == "predefined" else "(custom)"
+        name = e["name"]
         line = f"  {tick} {name:<12} {e['ip']}"
+        if is_cur and is_live: attr = curses.color_pair(C_SEL_ACT)|curses.A_BOLD
+        elif is_cur: attr = curses.color_pair(C_SEL)|curses.A_BOLD
+        elif is_live: attr = curses.color_pair(C_ACTIVE)|curses.A_BOLD
+        elif is_sel: attr = curses.color_pair(C_DIFF_NEW)
+        else: attr=0
+        safe_add(stdscr,row,0,line[:w-1],attr); row+=1
 
-        if is_cur and is_live:
-            attr = curses.color_pair(C_SEL_ACT) | curses.A_BOLD
-        elif is_cur:
-            attr = curses.color_pair(C_SEL) | curses.A_BOLD
-        elif is_live:
-            attr = curses.color_pair(C_ACTIVE) | curses.A_BOLD
-        elif is_sel:
-            attr = curses.color_pair(C_DIFF_NEW)
-        else:
-            attr = 0
+    # Log panel
+    log_h = min(8,len(log_lines)+2); log_top = h-log_h-1
+    hline(stdscr,log_top,0,curses.ACS_HLINE,w-1,curses.color_pair(C_BORDER))
+    safe_add(stdscr,log_top,2," LOG ",curses.color_pair(C_SECTION)|curses.A_BOLD)
+    visible = log_lines[-(log_h-1):]
+    for i,(kind,msg) in enumerate(visible):
+        ts = time.strftime("%H:%M:%S")
+        msg_ts = f"[{ts}] {msg}"
+        if kind=="ERR": attr=curses.color_pair(C_LOG_ERR)
+        elif kind=="OK": attr=curses.color_pair(C_LOG_OK)|curses.A_BOLD
+        elif kind=="CMD": attr=curses.color_pair(C_LOG_CMD)
+        else: attr=curses.color_pair(C_DIFF_CUR)
+        safe_add(stdscr,log_top+1+i,2,msg_ts[:w-3],attr)
 
-        safe_add(stdscr, row, 0, line[:w - 1], attr)
-        row += 1
-
-    # ── Log panel ─────────────────────────────
-    log_h   = min(8, len(log_lines) + 2)
-    log_top = h - log_h - 1
-
-    hline(stdscr, log_top, 0, curses.ACS_HLINE, w - 1, curses.color_pair(C_BORDER))
-    safe_add(stdscr, log_top, 2, " LOG ",
-             curses.color_pair(C_SECTION) | curses.A_BOLD)
-
-    visible = log_lines[-(log_h - 1):]
-    for i, (kind, msg) in enumerate(visible):
-        if kind == "ERR":
-            attr = curses.color_pair(C_LOG_ERR)
-        elif kind == "OK":
-            attr = curses.color_pair(C_LOG_OK) | curses.A_BOLD
-        elif kind == "CMD":
-            attr = curses.color_pair(C_LOG_CMD)
-        else:
-            attr = curses.color_pair(C_DIFF_CUR)
-        safe_add(stdscr, log_top + 1 + i, 2, msg[:w - 3], attr)
-
-    # ── Status bar (bottom row) ────────────────
-    ts = time.strftime("%H:%M:%S")
-    status = f" {status_msg:<{w - 12}} {ts} "
-    safe_add(stdscr, h - 1, 0, status[:w - 1],
-             curses.color_pair(C_HINT) | curses.A_DIM)
-
-    stdscr.noutrefresh()
-    curses.doupdate()
+    # Status bar
+    status = f" {status_msg:<{w-12}} {time.strftime('%H:%M:%S')} "
+    safe_add(stdscr,h-1,0,status[:w-1],curses.color_pair(C_HINT)|curses.A_DIM)
+    stdscr.noutrefresh(); curses.doupdate()
 
 # ─────────────────────────────────────────────
 #  Main loop
 # ─────────────────────────────────────────────
 def ui_loop(stdscr):
-    init_colors()
-    curses.curs_set(0)
-    stdscr.keypad(True)
-
-    entries = [
-        {"name": d["name"], "ip": d["ip"], "type": "predefined"}
-        for d in PREDEFINED
-    ]
-    for ip in load_custom_ips():
-        entries.append({"name": ip, "ip": ip, "type": "custom"})
-
+    init_colors(); curses.curs_set(0); stdscr.keypad(True)
+    entries = [{"name":d["name"],"ip":d["ip"],"type":"predefined"} for d in PREDEFINED]
+    for e in load_custom_ips(): entries.append({"name":e.get("name", e["ip"]),"ip":e["ip"],"type":"custom"})
     current_ips = get_active_ips(CON_ID)
-    selected    = {i for i, e in enumerate(entries) if e["ip"] in current_ips}
-    cursor      = 0
-    log_lines   = []        # list of (kind, msg) tuples
-    status_msg  = "Ready"
+    selected = {i for i,e in enumerate(entries) if e["ip"] in current_ips}
+    cursor = 0; log_lines=[]; status_msg="Ready"
 
     while True:
         draw_ui(stdscr, entries, selected, cursor, log_lines, current_ips, status_msg)
         key = stdscr.getch()
 
-        # ── Navigation ────────────────────────
         if key in (curses.KEY_UP, ord("k"), ord("K")):
-            cursor = (cursor - 1) % len(entries)
-            status_msg = ""
-
+            cursor=(cursor-1)%len(entries); status_msg=""
         elif key in (curses.KEY_DOWN, ord("j"), ord("J")):
-            cursor = (cursor + 1) % len(entries)
-            status_msg = ""
-
-        # ── Toggle selection ──────────────────
-        elif key == ord(" "):
+            cursor=(cursor+1)%len(entries); status_msg=""
+        elif key==ord(" "):
             selected.symmetric_difference_update({cursor})
-            ip = entries[cursor]["ip"]
-            state = "selected" if cursor in selected else "deselected"
-            status_msg = f"{ip} {state}"
-
-        # ── Add custom IP ─────────────────────
+            ip=entries[cursor]["ip"]
+            state="selected" if cursor in selected else "deselected"
+            status_msg=f"{ip} {state}"
         elif key in (ord("n"), ord("N")):
-            ip = curses_input(stdscr, "New IP (x.x.x.x/xx):")
-            if ip is None:
-                log_lines.append(("INFO", "Add cancelled"))
-                status_msg = "Cancelled"
-            elif not is_valid_ip(ip):
-                log_lines.append(("ERR", f"Invalid IP: {ip}"))
-                status_msg = "Invalid IP"
+            ip=curses_input(stdscr,"New IP (x.x.x.x/xx):")
+            if ip is None: log_lines.append(("INFO","Add cancelled")); status_msg="Cancelled"
+            elif not is_valid_ip(ip): log_lines.append(("ERR",f"Invalid IP: {ip}")); status_msg="Invalid IP"
             else:
-                ip = normalize_ip(ip)
-                if ip in {e["ip"] for e in entries}:
-                    log_lines.append(("ERR", f"Duplicate: {ip}"))
-                    status_msg = "Duplicate IP"
+                ip=normalize_ip(ip)
+                if ip in {e["ip"] for e in entries}: log_lines.append(("ERR",f"Duplicate: {ip}")); status_msg="Duplicate IP"
                 else:
-                    entries.append({"name": ip, "ip": ip, "type": "custom"})
-                    selected.add(len(entries) - 1)
+                    name=curses_input(stdscr,f"Name for {ip}:") or ip
+                    entries.append({"name":name,"ip":ip,"type":"custom"})
+                    selected.add(len(entries)-1)
                     save_custom_ips(entries)
-                    log_lines.append(("OK", f"Added {ip}"))
-                    status_msg = f"Added {ip}"
+                    log_lines.append(("OK",f"Added {ip} ({name})")); status_msg=f"Added {ip}"
             _trim_log(log_lines)
-
-        # ── Delete custom IP ──────────────────
+        elif key in (ord("e"), ord("E")):
+            e=entries[cursor]
+            if e["type"]!="custom": log_lines.append(("ERR","Cannot rename predefined IP")); status_msg="Predefined – protected"
+            else:
+                name=curses_input(stdscr,f"Name for {e['ip']}:")
+                if name:
+                    e["name"]=name; save_custom_ips(entries)
+                    log_lines.append(("OK",f"Renamed to {name}")); status_msg=f"Renamed to {name}"
         elif key in (ord("d"), ord("D")):
-            e = entries[cursor]
-            if e["type"] != "custom":
-                log_lines.append(("ERR", "Cannot delete predefined entry"))
-                status_msg = "Predefined – protected"
+            e=entries[cursor]
+            if e["type"]!="custom": log_lines.append(("ERR","Cannot delete predefined entry")); status_msg="Predefined – protected"
             else:
-                log_lines.append(("OK", f"Deleted {e['ip']}"))
+                log_lines.append(("OK",f"Deleted {e['ip']} ({e['name']})"))
                 entries.pop(cursor)
-                selected = {i if i < cursor else i - 1
-                            for i in selected if i != cursor}
+                selected={i if i<cursor else i-1 for i in selected if i!=cursor}
                 save_custom_ips(entries)
-                cursor = max(0, min(cursor, len(entries) - 1))
-                status_msg = f"Deleted {e['ip']}"
+                cursor=max(0,min(cursor,len(entries)-1))
+                status_msg=f"Deleted {e['ip']}"
             _trim_log(log_lines)
-
-        # ── Apply ─────────────────────────────
         elif key in (ord("a"), ord("A")):
-            status_msg = "Applying…"
-            draw_ui(stdscr, entries, selected, cursor, log_lines, current_ips, status_msg)
-            result = apply_changes(CON_ID, entries, selected, log_lines)
-            if result is not None:
-                current_ips = result
-                status_msg = "Applied OK"
-            else:
-                status_msg = "Apply FAILED – see log"
+            status_msg="Applying…"
+            draw_ui(stdscr,entries,selected,cursor,log_lines,current_ips,status_msg)
+            result=apply_changes(CON_ID,entries,selected,log_lines)
+            if result: current_ips=result; status_msg="Applied OK"
+            else: status_msg="Apply FAILED – see log"
             _trim_log(log_lines)
-
-        # ── Refresh live IPs ──────────────────
         elif key in (ord("r"), ord("R")):
-            current_ips = get_active_ips(CON_ID)
-            selected    = {i for i, e in enumerate(entries) if e["ip"] in current_ips}
-            log_lines.append(("INFO", f"Refreshed: {', '.join(current_ips) or '—'}"))
-            status_msg = "Refreshed"
+            current_ips=get_active_ips(CON_ID)
+            selected={i for i,e in enumerate(entries) if e["ip"] in current_ips}
+            log_lines.append(("INFO",f"Refreshed: {', '.join(current_ips) or '—'}")); status_msg="Refreshed"
             _trim_log(log_lines)
-
-        # ── Quit ──────────────────────────────
         elif key in (ord("q"), ord("Q"), 27):
             break
 
@@ -484,8 +392,7 @@ def main():
     except KeyboardInterrupt:
         print("\nExited cleanly.")
     except Exception:
-        curses.endwin()
-        traceback.print_exc()
+        curses.endwin(); traceback.print_exc()
 
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
