@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+STATE_FILE="./ips.txt"
+LOG_FILE="./state.log"
+CON_ID_EXPECTED="eth-operator"
+
+CMD="$1"
+SUBCMD="$2"
+CON_ID="$3"
+
+# Ensure state file exists
+if [[ ! -f "$STATE_FILE" ]]; then
+    echo "192.168.1.10/24,10.0.0.5/24" > "$STATE_FILE"
+fi
+
+# Ensure log file exists
+touch "$LOG_FILE"
+
+# -----------------------
+# con show
+# -----------------------
+if [[ "$CMD" == "con" && "$SUBCMD" == "show" ]]; then
+    if [[ "$CON_ID" != "$CON_ID_EXPECTED" ]]; then
+        echo "Error: unknown connection $CON_ID" >&2
+        exit 1
+    fi
+
+    IPS=$(cat "$STATE_FILE")
+    echo "ipv4.addresses: $IPS"
+    exit 0
+fi
+
+# -----------------------
+# con mod
+# -----------------------
+if [[ "$CMD" == "con" && "$SUBCMD" == "mod" ]]; then
+    if [[ "$CON_ID" != "$CON_ID_EXPECTED" ]]; then
+        echo "Error: unknown connection $CON_ID" >&2
+        exit 1
+    fi
+
+    FIELD="$4"
+    VALUE="$5"
+
+    if [[ "$FIELD" == "ipv4.addresses" ]]; then
+        # Strip quotes if present
+        VALUE="${VALUE%\"}"
+        VALUE="${VALUE#\"}"
+
+        echo "$VALUE" > "$STATE_FILE"
+        echo "Updated ipv4.addresses to: $VALUE"
+        exit 0
+    fi
+
+    echo "Unsupported field: $FIELD" >&2
+    exit 1
+fi
+
+# -----------------------
+# con up
+# -----------------------
+if [[ "$CMD" == "con" && "$SUBCMD" == "up" ]]; then
+    TIMESTAMP=$(date "+%Y-%m-%d %H:%M:%S")
+
+    echo "Connection '$CON_ID' successfully activated"
+
+    # Log event
+    echo "$CON_ID up @ $TIMESTAMP" >> "$LOG_FILE"
+
+    exit 0
+fi
+
+# -----------------------
+# fallback
+# -----------------------
+echo "Unsupported command: $@" >&2
+exit 1
