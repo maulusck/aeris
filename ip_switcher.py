@@ -378,38 +378,82 @@ def curses_input(stdscr, prompt, prefill="", maxlen=40):
 # ─────────────────────────────────────────────────────────────
 def confirm_dialog(stdscr, removing, adding):
     h, w = stdscr.getmaxyx()
+
     rows = [("  CONFIRM APPLY  ", curses.color_pair(C_CURSOR) | curses.A_BOLD)]
     for ip in removing:
         rows.append((f"  - {ip}", curses.color_pair(C_PEND_DEL)))
     for ip in adding:
         rows.append((f"  + {ip}", curses.color_pair(C_PEND_ADD) | curses.A_BOLD))
+
     if not removing and not adding:
         rows.append(("  (no diff)", curses.color_pair(C_DIM)))
+
     rows += [
         ("", 0),
         ("  [Y] apply   [N] cancel", curses.color_pair(C_SECTION) | curses.A_BOLD),
     ]
 
-    box_h = len(rows) + 2
+    # ── Clamp box to screen ───────────────────
+    box_h = min(h - 4, len(rows) + 2)
     box_w = min(w - 6, max(len(t) for t, _ in rows) + 4)
-    try:
-        win = curses.newwin(box_h, box_w, h // 2 - box_h // 2, (w - box_w) // 2)
-    except curses.error:
-        return True
+    box_y = (h - box_h) // 2
+    box_x = (w - box_w) // 2
 
-    win.attron(curses.color_pair(C_CURSOR) | curses.A_BOLD)
-    win.border()
-    win.attroff(curses.color_pair(C_CURSOR) | curses.A_BOLD)
-    for i, (text, attr) in enumerate(rows):
-        sadd(win, i + 1, 1, text[: box_w - 2], attr)
-    win.refresh()
+    try:
+        win = curses.newwin(box_h, box_w, box_y, box_x)
+    except curses.error:
+        return False  # FAIL SAFE (never auto-apply)
+
+    win.keypad(True)
+
+    pos = 0
+    max_pos = max(0, len(rows) - (box_h - 2))
 
     while True:
-        ch = stdscr.getch()
+        win.erase()
+
+        # Border
+        win.attron(curses.color_pair(C_CURSOR) | curses.A_BOLD)
+        win.border()
+        win.attroff(curses.color_pair(C_CURSOR) | curses.A_BOLD)
+
+        # Visible rows
+        for i in range(box_h - 2):
+            ri = pos + i
+            if ri >= len(rows):
+                break
+            text, attr = rows[ri]
+            sadd(win, i + 1, 1, text[: box_w - 2], attr)
+
+        # Scrollbar
+        if max_pos > 0:
+            pct = int(pos / max_pos * (box_h - 3))
+            for i in range(box_h - 2):
+                ch = "\u2588" if i == pct else "\u2591"
+                sadd(win, i + 1, box_w - 2, ch, curses.color_pair(C_BORDER))
+
+        win.refresh()
+
+        ch = win.getch()
+
+        # ── Confirm / cancel ─────────────────
         if ch in (ord("y"), ord("Y"), 10, 13):
             return True
         if ch in (ord("n"), ord("N"), 27):
             return False
+
+        # ── Scroll ──────────────────────────
+        elif ch in (curses.KEY_DOWN, ord("j")):
+            pos = min(pos + 1, max_pos)
+
+        elif ch in (curses.KEY_UP, ord("k")):
+            pos = max(pos - 1, 0)
+
+        elif ch == curses.KEY_PPAGE:
+            pos = max(0, pos - (box_h - 2))
+
+        elif ch == curses.KEY_NPAGE:
+            pos = min(max_pos, pos + (box_h - 2))
 
 
 # ─────────────────────────────────────────────────────────────
@@ -519,6 +563,7 @@ NOTES
 
     # Combine
     content_lines = help_text + [""] + ascii_art
+
     pos = 0
     max_pos = max(0, len(content_lines) - (box_h - 2))
 
@@ -526,6 +571,7 @@ NOTES
         win = curses.newwin(box_h, box_w, box_y, box_x)
     except curses.error:
         return
+
     win.keypad(True)
 
     while True:
@@ -536,7 +582,7 @@ NOTES
         win.border()
         win.attroff(curses.color_pair(C_BORDER))
 
-        # Display content
+        # Content
         for idx in range(box_h - 2):
             line_idx = pos + idx
             if line_idx >= len(content_lines):
@@ -544,7 +590,7 @@ NOTES
 
             line = content_lines[line_idx]
 
-            # Color rules
+            # ── Color rules (same logic, fixed) ──
             if line_idx == 0:
                 attr = curses.color_pair(C_HDR) | curses.A_BOLD
             elif line.strip().isupper() and not line.startswith("PRESS"):
@@ -556,7 +602,6 @@ NOTES
             else:
                 attr = curses.color_pair(C_DIM) | curses.A_BOLD
 
-            # Center ASCII art
             x_pos = 2
             if line in ascii_art:
                 x_pos = max(2, (box_w - len(line)) // 2)
@@ -573,12 +618,24 @@ NOTES
         win.refresh()
 
         key = win.getch()
+
+        # ── Exit ─────────────────────────────
         if key in (27, ord("q"), ord("Q")):
             break
+
+        # ── Line scroll ──────────────────────
         elif key in (curses.KEY_DOWN, ord("j")):
             pos = min(pos + 1, max_pos)
+
         elif key in (curses.KEY_UP, ord("k")):
             pos = max(pos - 1, 0)
+
+        # ── Page scroll ──────────────────────
+        elif key == curses.KEY_PPAGE:
+            pos = max(0, pos - (box_h - 2))
+
+        elif key == curses.KEY_NPAGE:
+            pos = min(max_pos, pos + (box_h - 2))
 
 
 # ─────────────────────────────────────────────────────────────
@@ -805,7 +862,7 @@ def ui_loop(stdscr):
     init_colors()
     curses.curs_set(0)
     stdscr.keypad(True)
-    stdscr.timeout(500)  # tick for clock refresh
+    stdscr.timeout(500)
 
     entries = [
         {"name": d["name"], "ip": d["ip"], "type": "predefined"} for d in PREDEFINED
@@ -817,13 +874,11 @@ def ui_loop(stdscr):
     selected = {i for i, e in enumerate(entries) if e["ip"] in current_ips}
     cursor = 0
     entry_scroll = 0
-    log = []  # (kind, timestamp, msg)
-    log_scroll = 0  # 0 = pinned to bottom; N = scrolled back N steps
+    log = []
+    log_scroll = 0
     status = "Ready"
 
     while True:
-        # Auto-recompute entry_scroll to keep cursor in view (draw_ui handles it,
-        # but we pass it in and get it back via the clamp logic there)
         draw_ui(
             stdscr,
             entries,
@@ -838,26 +893,42 @@ def ui_loop(stdscr):
 
         key = stdscr.getch()
         if key == -1:
-            continue  # timer tick
+            continue
+
+        h, w = stdscr.getmaxyx()
+        LOG_PANEL_H = 7
+        list_top = 5
+        list_bot = h - LOG_PANEL_H - 1
+        list_h = max(1, list_bot - list_top)
+        log_rows = LOG_PANEL_H - 1
 
         # ── Navigation ────────────────────────
         if key in (curses.KEY_UP, ord("k"), ord("K")):
             cursor = (cursor - 1) % max(1, len(entries))
-            status = ""
 
         elif key in (curses.KEY_DOWN, ord("j"), ord("J")):
             cursor = (cursor + 1) % max(1, len(entries))
-            status = ""
 
-        # ── Entry list scroll (Ctrl-U / Ctrl-D style, or PgUp/PgDn) ──
-        elif key in (curses.KEY_PPAGE,):
-            entry_scroll = max(0, entry_scroll - 5)
-        elif key in (curses.KEY_NPAGE,):
-            entry_scroll += 5  # clamped in draw_ui
+        # ── MAIN PANEL PAGING ─────────────────
+        elif key == curses.KEY_PPAGE:
+            cursor = max(0, cursor - list_h)
+            entry_scroll = max(0, entry_scroll - list_h)
 
-        # ── Log scroll ([ and ] or Alt-j/k) ──
+        elif key == curses.KEY_NPAGE:
+            cursor = min(len(entries) - 1, cursor + list_h)
+            entry_scroll += list_h
+
+        # ── LOG PANEL PAGING (Shift+Pg) ───────
+        elif key == curses.KEY_SPREVIOUS:
+            log_scroll = min(len(log), log_scroll + log_rows)
+
+        elif key == curses.KEY_SNEXT:
+            log_scroll = max(0, log_scroll - log_rows)
+
+        # ── Fine log scroll ───────────────────
         elif key == ord("["):
             log_scroll = min(max(0, len(log) - 1), log_scroll + 1)
+
         elif key == ord("]"):
             log_scroll = max(0, log_scroll - 1)
 
@@ -911,8 +982,6 @@ def ui_loop(stdscr):
                     save_custom(entries)
                     log_append(log, "OK", f"Renamed: {old} -> {new_name}")
                     status = f"Renamed to {new_name}"
-                else:
-                    status = "Empty label — no change"
 
         # ── Delete custom ─────────────────────
         elif key in (ord("d"), ord("D")):
@@ -970,7 +1039,6 @@ def ui_loop(stdscr):
         # ── Help popup ─────────────────────────
         elif key == ord("?"):
             help_popup(stdscr)
-            status = "Ready"
 
         # ── Quit ──────────────────────────────
         elif key in (ord("q"), ord("Q"), 27):
