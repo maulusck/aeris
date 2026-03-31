@@ -413,9 +413,178 @@ def confirm_dialog(stdscr, removing, adding):
 
 
 # ─────────────────────────────────────────────────────────────
+#  Help popup
+# ─────────────────────────────────────────────────────────────
+def help_popup(stdscr):
+    curses.curs_set(0)
+    h, w = stdscr.getmaxyx()
+    box_w = min(100, w - 4)
+    box_h = min(h - 4, 28)
+    box_y = (h - box_h) // 2
+    box_x = (w - box_w) // 2
+
+    # Guide text
+    help_text = """
+AERIS · Avionic Ethernet Rig IP Selector
+─────────────────────────────────────────────
+
+KEYBINDINGS
+  ↑ / k        Move cursor up
+  ↓ / j        Move cursor down
+  SPC          Toggle IP selection
+  N            Add custom IP
+  E            Rename custom IP
+  D            Delete custom IP
+  A            Apply selected IPs
+  R            Refresh active IPs
+  ?            Show this help
+  Q / ESC      Quit
+
+DESCRIPTION
+  Select, add, rename, and apply IPv4 addresses to the Ethernet interface.
+  Entries are divided into PREDEFINED (fixed) and CUSTOM (editable) lists.
+  The live IPs are displayed at the top; pending additions/removals are
+  highlighted in color.
+
+EXAMPLES
+  - Toggle multiple IPs with SPC and press A to apply.
+  - Add a new IP with N, label it, then apply.
+  - Use R to refresh active IPs after changes outside AERIS.
+
+NOTES
+  - Predefined entries cannot be renamed or deleted.
+  - Custom entries are saved to ~/.rig-ip-switcher.json
+  - Scroll lists with ↑/↓ or j/k, exit with Q or ESC.
+""".strip().splitlines()
+
+    # ASCII art as triple-quoted string
+    ascii_art = """\n\n\n\n\n
+                             =:=.                                              
+                           .=:.:*-                                             
+                        .=+*-.::*%%*:.                                         
+                       .****:-=:=%%%##*:.                                      
+                       .**#=:*%=:*%%%#**                                       
+               ..      -%*#--#@#:=%%%##*%*:                                    
+      .::::.:*****#*-  =%##:=%@%-:*%###*%%##*:                                 
+   .==++***%%%%%**#%**:=@%%:+%%%*.=#*****%%#*#.                                
+  .:-*****#***%%%#**#%%%@@%:+%%%%-:+******%%##%#=                              
+   :-=***%@@@%#*%%#***%%@@%-=%%@%*:-#*****#%#*%#*+                             
+  :=+:+=+*%@@@%%#*##***%%@%-=#%%%%-:+*+****#%##%*##-                           
+ :==*=-==*%%%%%%##**#+**%%%=:*#%%#%::++++++*##*#%*@%%*.                        
+  ::++:--**: .:+**#++*+**#%+:+*%*%%*::+===+++***###%%#%*.                      
+  :.=+:-:+#=     :+*=++++***:-***%%%=.:==-=+=***###%%%##*=                     
+  .::*--:*#=       :=:-::=+*-:===+**%-.----=+=***##%%%##%#*.                   
+  ::-+--=*#:       -*=:...:::::-===+#%-:=-::+==*+*%#%%%#*%%#:                  
+  .:-*-=+#*.      .*=.........::-===*#%=.-:::=-+**#%%%%#*%%%#.                 
+  .-=*==*%=       :*:...........:--=+*#%+:=::-:-*+*%%%%%%#%%%#.                
+  :=*#=*##.       -=...........:::--=*#%#=:-::-:=+*#@%%%%%#%%%+                
+  =+##*#%+        ::.............:--+**#+*--::=--*+*%%#%%%%%%%%.               
+  :#%%%%%%.       :.............::-=+*+*=+*==-===***%%%%%%%%%%%=               
+   .#%@%%%%:      ++=::......-+*###%#*****#*+=+*+*#*%%%%%%%@%%%*               
+    .*%%*%%%*:    -=+**:...:=*##%*%@%#%#++***+*#*%%%@@%@@%%%@@%#               
+      =#- :*##=   .*#%%#::..-==+**%%%@@%#**#%*#%#%%%@@@@%@@@@@@@%%#*=.         
+       -+    :**: ::*%#*=.....:..:*%#*=:+**%%%%%%%@%@@@%#*@@@@@@%%###%=        
+        -.     .== .=**-.........:***+:=*=#%@%%@%@@@@@@@%*#@@@@@%%#####:       
+        ..       .:====:...::.:.:.::::::=*%%%@@@@@@@@@@%#*#@@@@@@%%%###%:      
+                   .:..:..:-*=-:.:.::::=*#**@@@@@@@@@%%#+*@@@@@@@%%%%###*      
+                    ......:*#*==-:::-=+*++*%%@%%@@@@@@%##@@@@@@@%%@@%%###=     
+                     .....=***===========*%%**#%*#%%%@@@@@@@@@@@%%%%%%%###=    
+                     .::...::-=========*++**+**%*+*%*#%@@@@@@@%%%%%%%%%%##%-   
+                     .=-.:=******==========+***#%*+#%%%%@@@@@@@@%%%%%%%%####-  
+                      -*+.::------========+***%%*+**%@@@@@@@%@@@@@%%%%%###**%= 
+                      :=#*::::::---======+**%@%%*+=+*@@@@@@%%@@@%%%%%%======+= 
+                      .=*#*:.:::--=====+*%@@%%%%%*=+**@@@@%%%%@@%%%%**:        
+                     ::=**%%-::::-=+*%%@%%%%%%##%%#+*##@@%%@%%%%%#%***.        
+                     -=+**%%%%==-=%%%%%%%%%%%##*%%@%*%%%@%%%%%%%%%#*%#.        
+                     .*=*#%%@=   .+=*%%%%##*****#%%@@%@@@%%%%%%%##%%%#*.       
+                     ==****%@*.   -:-==**********#%%@@@@@%%%%%%#%%%%%***.      
+                      =#**%@@#.  -#::::-=+++++**+*%%%@@@@@%%%%%%%%%%##**:      
+                       =%%@@%%:=***-.:.::-===+:===%%@@@@%@%%%%%%%%#*####.      
+                       .*%%@%%***##-..:..::-*+++==##@@@%%%%%%%%%%%**%%%=       
+                       +#*%%%%%%%%#-.:.:..::****==**@@@%%@%%%%%%%#%%%#*=:      
+                      =**#%%%@%%%%+=::.:..:-*#*#+==*%@@%%%%%%%%#%%%%***+:      
+                      .+#**%%%%%%*==-:...:-=*#*#%*++%%@@%%%%%%%%%%%#***+:      
+                       +**%##%#*+===-:.::--+#####%#**%@@%%%%%%%%%%#***+=:      
+                      :*+***+-:-:::.....::+*######%%##%@@%%%%%%%%#*****+.      
+                      -=-+:.             :***######%@#%@@%%%%%%%###***+-       
+                                         -***#######%%%@@%%%%%%##*****+:       
+                                         :********#%#@%@%%%%%%##*****+=.       
+                                          :==+******#@@@%####******++=:        
+                                                  .:=%@%##*##****=--:          
+                                                    +%%#**++=::                
+                                                  :*#*+==-:::.                 
+                                                :*+: :.                        
+
+\n\n\n""".splitlines()
+
+    # Combine
+    content_lines = help_text + [""] + ascii_art
+    pos = 0
+    max_pos = max(0, len(content_lines) - (box_h - 2))
+
+    try:
+        win = curses.newwin(box_h, box_w, box_y, box_x)
+    except curses.error:
+        return
+    win.keypad(True)
+
+    while True:
+        win.erase()
+
+        # Border
+        win.attron(curses.color_pair(C_BORDER))
+        win.border()
+        win.attroff(curses.color_pair(C_BORDER))
+
+        # Display content
+        for idx in range(box_h - 2):
+            line_idx = pos + idx
+            if line_idx >= len(content_lines):
+                break
+
+            line = content_lines[line_idx]
+
+            # Color rules
+            if line_idx == 0:
+                attr = curses.color_pair(C_HDR) | curses.A_BOLD
+            elif line.strip().isupper() and not line.startswith("PRESS"):
+                attr = curses.color_pair(C_SECTION) | curses.A_BOLD
+            elif line.startswith("PRESS"):
+                attr = curses.color_pair(C_PEND_DEL) | curses.A_BOLD
+            elif line in ascii_art:
+                attr = curses.color_pair(C_PEND_ADD)
+            else:
+                attr = curses.color_pair(C_DIM) | curses.A_BOLD
+
+            # Center ASCII art
+            x_pos = 2
+            if line in ascii_art:
+                x_pos = max(2, (box_w - len(line)) // 2)
+
+            sadd(win, idx + 1, x_pos, line[: box_w - 4], attr)
+
+        # Scrollbar
+        if max_pos > 0:
+            pct = int(pos / max_pos * (box_h - 3))
+            for i in range(box_h - 2):
+                ch = "\u2588" if i == pct else "\u2591"
+                sadd(win, i + 1, box_w - 2, ch, curses.color_pair(C_BORDER))
+
+        win.refresh()
+
+        key = win.getch()
+        if key in (27, ord("q"), ord("Q")):
+            break
+        elif key in (curses.KEY_DOWN, ord("j")):
+            pos = min(pos + 1, max_pos)
+        elif key in (curses.KEY_UP, ord("k")):
+            pos = max(pos - 1, 0)
+
+
+# ─────────────────────────────────────────────────────────────
 #  TUI draw
 # ─────────────────────────────────────────────────────────────
-HINT = " jk/↑↓:move  SPC:toggle  N:add  E:rename  D:del  A:apply  R:refresh  Q:quit"
+HINT = " jk/↑↓:move  SPC:toggle  N:add  E:rename  D:del  A:apply  R:refresh  ?:help  Q:quit"
 NAME_W = 13
 
 # Entry-row color matrix: (is_cursor, state) -> color_pair_index, bold
@@ -797,6 +966,11 @@ def ui_loop(stdscr):
             selected = {i for i, e in enumerate(entries) if e["ip"] in current_ips}
             log_append(log, "INFO", f"Refreshed: {', '.join(current_ips) or '—'}")
             status = "Refreshed"
+
+        # ── Help popup ─────────────────────────
+        elif key == ord("?"):
+            help_popup(stdscr)
+            status = "Ready"
 
         # ── Quit ──────────────────────────────
         elif key in (ord("q"), ord("Q"), 27):
