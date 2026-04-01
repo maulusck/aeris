@@ -1,7 +1,7 @@
-#!/usr/bin/env python3
 """
 AERIS · Avionic Ethernet Rig IP Selector
 """
+
 import curses
 import subprocess
 import traceback
@@ -11,10 +11,8 @@ import ipaddress
 from pathlib import Path
 from datetime import datetime
 
-# ─────────────────────────────────────────────────────────────
-#  Config
-# ─────────────────────────────────────────────────────────────
-NMCLI = "./nmcli"  # or "./nmcli" for testing
+
+NMCLI = "./nmcli"
 CON_ID = "eth-operator"
 IFACE = "eth0"
 STATE_FILE = Path.home() / ".rig-ip-switcher.json"
@@ -25,40 +23,35 @@ PREDEFINED = [
     {"name": "Test VM", "ip": "172.16.0.20/16"},
 ]
 
-# ─────────────────────────────────────────────────────────────
-#  Color-pair indices  — semantic names only
-# ─────────────────────────────────────────────────────────────
-# Layout chrome
-C_HDR = 1  # amber title bar
-C_HINT = 2  # dark key-hint / status bar
-C_BORDER = 3  # dark-grey box lines
-C_SECTION = 4  # amber section labels
-C_DIM = 5  # mid-grey inactive text
 
-# Entry row states         fg meaning
-C_LIVE = 6  # green   — IP is currently applied
-C_PEND_ADD = 7  # cyan    — selected, not yet applied (will be added)
-C_PEND_DEL = 8  # red     — live but deselected (will be removed)
-C_CURSOR = 9  # black/cyan bg  — cursor on neutral row
-C_CUR_LIVE = 10  # black/green bg — cursor on live row
-C_CUR_PADD = (
-    11  # black/cyan bg  — cursor on pending-add row  (same as C_CURSOR visually)
-)
-C_CUR_PDEL = 12  # black/red bg   — cursor on pending-del row
+C_HDR = 1
+C_HINT = 2
+C_BORDER = 3
+C_SECTION = 4
+C_DIM = 5
 
-# Status panel
-C_STAT_LIV = 13  # live IPs line   (green dim)
-C_STAT_ADD = 14  # pending add     (cyan)
-C_STAT_DEL = 15  # pending remove  (red)
 
-# Log
-C_LOG_OK = 16  # green
-C_LOG_ERR = 17  # red
-C_LOG_CMD = 18  # mid-grey
-C_LOG_INFO = 19  # light-grey
+C_LIVE = 6
+C_PEND_ADD = 7
+C_PEND_DEL = 8
+C_CURSOR = 9
+C_CUR_LIVE = 10
+C_CUR_PADD = 11
+C_CUR_PDEL = 12
 
-# Input box
-C_INPUT = 20  # amber on near-black
+
+C_STAT_LIV = 13
+C_STAT_ADD = 14
+C_STAT_DEL = 15
+
+
+C_LOG_OK = 16
+C_LOG_ERR = 17
+C_LOG_CMD = 18
+C_LOG_INFO = 19
+
+
+C_INPUT = 20
 
 
 def init_colors():
@@ -66,14 +59,14 @@ def init_colors():
     curses.use_default_colors()
     bg = -1
     try:
-        A = 214  # amber
-        CY = 51  # cyan
-        GR = 82  # green
-        RE = 196  # red
-        BLK = 16  # true black
-        DGY = 236  # dark grey
-        MGY = 242  # mid grey
-        LGY = 248  # light grey
+        A = 214
+        CY = 51
+        GR = 82
+        RE = 196
+        BLK = 16
+        DGY = 236
+        MGY = 242
+        LGY = 248
 
         curses.init_pair(C_HDR, BLK, A)
         curses.init_pair(C_HINT, MGY, DGY)
@@ -100,7 +93,7 @@ def init_colors():
 
         curses.init_pair(C_INPUT, A, BLK)
     except Exception:
-        # 8-colour fallback
+
         Y, C, G, R, W, K = (
             curses.COLOR_YELLOW,
             curses.COLOR_CYAN,
@@ -131,9 +124,6 @@ def init_colors():
         curses.init_pair(C_INPUT, Y, K)
 
 
-# ─────────────────────────────────────────────────────────────
-#  Drawing primitives
-# ─────────────────────────────────────────────────────────────
 def sadd(win, y, x, text, attr=0):
     """Safe clipped addstr."""
     try:
@@ -157,9 +147,6 @@ def hln(win, y, x, n, attr=0):
         pass
 
 
-# ─────────────────────────────────────────────────────────────
-#  Helpers
-# ─────────────────────────────────────────────────────────────
 def now_ts():
     return datetime.now().strftime("%H:%M:%S")
 
@@ -187,9 +174,6 @@ def log_append(log, kind, msg):
     trim(log)
 
 
-# ─────────────────────────────────────────────────────────────
-#  Persistence
-# ─────────────────────────────────────────────────────────────
 def load_custom():
     if not STATE_FILE.exists():
         return []
@@ -217,9 +201,6 @@ def save_custom(entries):
         pass
 
 
-# ─────────────────────────────────────────────────────────────
-#  NMCLI
-# ─────────────────────────────────────────────────────────────
 def run_nmcli(args, timeout=15):
     try:
         r = subprocess.run(
@@ -299,9 +280,6 @@ def apply_ips(con_id, ips, log, iface=IFACE):
     return ips
 
 
-# ─────────────────────────────────────────────────────────────
-#  Input box
-# ─────────────────────────────────────────────────────────────
 def curses_input(stdscr, prompt, prefill="", maxlen=40):
     """
     Floating amber input box. Full cursor editing.
@@ -373,9 +351,6 @@ def curses_input(stdscr, prompt, prefill="", maxlen=40):
             cpos += 1
 
 
-# ─────────────────────────────────────────────────────────────
-#  Confirm dialog
-# ─────────────────────────────────────────────────────────────
 def confirm_dialog(stdscr, removing, adding):
     h, w = stdscr.getmaxyx()
 
@@ -393,7 +368,6 @@ def confirm_dialog(stdscr, removing, adding):
         ("  [Y] apply   [N] cancel", curses.color_pair(C_SECTION) | curses.A_BOLD),
     ]
 
-    # ── Clamp box to screen ───────────────────
     box_h = min(h - 4, len(rows) + 2)
     box_w = min(w - 6, max(len(t) for t, _ in rows) + 4)
     box_y = (h - box_h) // 2
@@ -402,7 +376,7 @@ def confirm_dialog(stdscr, removing, adding):
     try:
         win = curses.newwin(box_h, box_w, box_y, box_x)
     except curses.error:
-        return False  # FAIL SAFE (never auto-apply)
+        return False
 
     win.keypad(True)
 
@@ -412,12 +386,10 @@ def confirm_dialog(stdscr, removing, adding):
     while True:
         win.erase()
 
-        # Border
         win.attron(curses.color_pair(C_CURSOR) | curses.A_BOLD)
         win.border()
         win.attroff(curses.color_pair(C_CURSOR) | curses.A_BOLD)
 
-        # Visible rows
         for i in range(box_h - 2):
             ri = pos + i
             if ri >= len(rows):
@@ -425,7 +397,6 @@ def confirm_dialog(stdscr, removing, adding):
             text, attr = rows[ri]
             sadd(win, i + 1, 1, text[: box_w - 2], attr)
 
-        # Scrollbar
         if max_pos > 0:
             pct = int(pos / max_pos * (box_h - 3))
             for i in range(box_h - 2):
@@ -436,13 +407,11 @@ def confirm_dialog(stdscr, removing, adding):
 
         ch = win.getch()
 
-        # ── Confirm / cancel ─────────────────
         if ch in (ord("y"), ord("Y"), 10, 13):
             return True
         if ch in (ord("n"), ord("N"), 27):
             return False
 
-        # ── Scroll ──────────────────────────
         elif ch in (curses.KEY_DOWN, ord("j")):
             pos = min(pos + 1, max_pos)
 
@@ -456,9 +425,6 @@ def confirm_dialog(stdscr, removing, adding):
             pos = min(max_pos, pos + (box_h - 2))
 
 
-# ─────────────────────────────────────────────────────────────
-#  Help popup
-# ─────────────────────────────────────────────────────────────
 def help_popup(stdscr):
     curses.curs_set(0)
     h, w = stdscr.getmaxyx()
@@ -467,7 +433,6 @@ def help_popup(stdscr):
     box_y = (h - box_h) // 2
     box_x = (w - box_w) // 2
 
-    # Guide text
     help_text = """
 AERIS · Avionic Ethernet Rig IP Selector
 ─────────────────────────────────────────────
@@ -501,67 +466,65 @@ NOTES
   - Scroll lists with ↑/↓ or j/k, exit with Q or ESC.
 """.strip().splitlines()
 
-    # ASCII art as triple-quoted string
     ascii_art = """\n\n\n\n\n
                              =:=.                                              
                            .=:.:*-                                             
                         .=+*-.::*%%*:.                                         
-                       .****:-=:=%%%##*:.                                      
-                       .**#=:*%=:*%%%#**                                       
-               ..      -%*#--#@#:=%%%##*%*:                                    
-      .::::.:*****#*-  =%##:=%@%-:*%###*%%##*:                                 
-   .==++***%%%%%**#%**:=@%%:+%%%*.=#*****%%#*#.                                
-  .:-*****#***%%%#**#%%%@@%:+%%%%-:+******%%##%#=                              
-   :-=***%@@@%#*%%#***%%@@%-=%%@%*:-#*****#%#*%#*+                             
-  :=+:+=+*%@@@%%#*##***%%@%-=#%%%%-:+*+****#%##%*##-                           
- :==*=-==*%%%%%%##**#+**%%%=:*#%%#%::++++++*##*#%*@%%*.                        
-  ::++:--**: .:+**#++*+**#%+:+*%*%%*::+===+++***###%%#%*.                      
-  :.=+:-:+#=     :+*=++++***:-***%%%=.:==-=+=***###%%%##*=                     
-  .::*--:*#=       :=:-::=+*-:===+**%-.----=+=***##%%%##%#*.                   
-  ::-+--=*#:       -*=:...:::::-===+#%-:=-::+==*+*%#%%%#*%%#:                  
-  .:-*-=+#*.      .*=.........::-===*#%=.-:::=-+**#%%%%#*%%%#.                 
-  .-=*==*%=       :*:...........:--=+*#%+:=::-:-*+*%%%%%%#%%%#.                
-  :=*#=*##.       -=...........:::--=*#%#=:-::-:=+*#@%%%%%#%%%+                
-  =+##*#%+        ::.............:--+**#+*--::=--*+*%%#%%%%%%%%.               
-  :#%%%%%%.       :.............::-=+*+*=+*==-===***%%%%%%%%%%%=               
-   .#%@%%%%:      ++=::......-+*###%#*****#*+=+*+*#*%%%%%%%@%%%*               
-    .*%%*%%%*:    -=+**:...:=*##%*%@%#%#++***+*#*%%%@@%@@%%%@@%#               
-      =#- :*##=   .*#%%#::..-==+**%%%@@%#**#%*#%#%%%@@@@%@@@@@@@%%#*=.         
-       -+    :**: ::*%#*=.....:..:*%#*=:+**%%%%%%%@%@@@%#*@@@@@@%%###%=        
-        -.     .== .=**-.........:***+:=*=#%@%%@%@@@@@@@%*#@@@@@%%#####:       
-        ..       .:====:...::.:.:.::::::=*%%%@@@@@@@@@@%#*#@@@@@@%%%###%:      
-                   .:..:..:-*=-:.:.::::=*#**@@@@@@@@@%%#+*@@@@@@@%%%%###*      
-                    ......:*#*==-:::-=+*++*%%@%%@@@@@@%##@@@@@@@%%@@%%###=     
-                     .....=***===========*%%**#%*#%%%@@@@@@@@@@@%%%%%%%###=    
-                     .::...::-=========*++**+**%*+*%*#%@@@@@@@%%%%%%%%%%##%-   
-                     .=-.:=******==========+***#%*+#%%%%@@@@@@@@%%%%%%%%####-  
-                      -*+.::------========+***%%*+**%@@@@@@@%@@@@@%%%%%###**%= 
-                      :=#*::::::---======+**%@%%*+=+*@@@@@@%%@@@%%%%%%======+= 
-                      .=*#*:.:::--=====+*%@@%%%%%*=+**@@@@%%%%@@%%%%**:        
-                     ::=**%%-::::-=+*%%@%%%%%%##%%#+*##@@%%@%%%%%#%***.        
-                     -=+**%%%%==-=%%%%%%%%%%%##*%%@%*%%%@%%%%%%%%%#*%#.        
-                     .*=*#%%@=   .+=*%%%%##*****#%%@@%@@@%%%%%%%##%%%#*.       
-                     ==****%@*.   -:-==**********#%%@@@@@%%%%%%#%%%%%***.      
-                      =#**%@@#.  -#::::-=+++++**+*%%%@@@@@%%%%%%%%%%##**:      
-                       =%%@@%%:=***-.:.::-===+:===%%@@@@%@%%%%%%%%#*####.      
-                       .*%%@%%***##-..:..::-*+++==##@@@%%%%%%%%%%%**%%%=       
-                       +#*%%%%%%%%#-.:.:..::****==**@@@%%@%%%%%%%#%%%#*=:      
-                      =**#%%%@%%%%+=::.:..:-*#*#+==*%@@%%%%%%%%#%%%%***+:      
-                      .+#**%%%%%%*==-:...:-=*#*#%*++%%@@%%%%%%%%%%%#***+:      
-                       +**%##%#*+===-:.::--+#####%#**%@@%%%%%%%%%%#***+=:      
-                      :*+***+-:-:::.....::+*######%%##%@@%%%%%%%%#*****+.      
-                      -=-+:.             :***######%@#%@@%%%%%%%###***+-       
-                                         -***#######%%%@@%%%%%%##*****+:       
-                                         :********#%#@%@%%%%%%##*****+=.       
-                                          :==+******#@@@%####******++=:        
-                                                  .:=%@%##*##****=--:          
-                                                    +%%#**++=::                
-                                                  :*#*+==-:::.                 
+                       .****:-=:=%%%
+                       .**
+               ..      -%*
+      .::::.:*****
+   .==++***%%%%%**
+  .:-*****
+   :-=***%@@@%
+  :=+:+=+*%@@@%%
+ :==*=-==*%%%%%%
+  ::++:--**: .:+**
+  :.=+:-:+
+  .::*--:*
+  ::-+--=*
+  .:-*-=+
+  .-=*==*%=       :*:...........:--=+*
+  :=*
+  =+
+  :
+   .
+    .*%%*%%%*:    -=+**:...:=*
+      =
+       -+    :**: ::*%
+        -.     .== .=**-.........:***+:=*=
+        ..       .:====:...::.:.:.::::::=*%%%@@@@@@@@@@%
+                   .:..:..:-*=-:.:.::::=*
+                    ......:*
+                     .....=***===========*%%**
+                     .::...::-=========*++**+**%*+*%*
+                     .=-.:=******==========+***
+                      -*+.::------========+***%%*+**%@@@@@@@%@@@@@%%%%%
+                      :=
+                      .=*
+                     ::=**%%-::::-=+*%%@%%%%%%
+                     -=+**%%%%==-=%%%%%%%%%%%
+                     .*=*
+                     ==****%@*.   -:-==**********
+                      =
+                       =%%@@%%:=***-.:.::-===+:===%%@@@@%@%%%%%%%%
+                       .*%%@%%***
+                       +
+                      =**
+                      .+
+                       +**%
+                      :*+***+-:-:::.....::+*
+                      -=-+:.             :***
+                                         -***
+                                         :********
+                                          :==+******
+                                                  .:=%@%
+                                                    +%%
+                                                  :*
                                                 :*+: :.                        
 
 \n\n\n""".splitlines()
 
-    # Combine
     content_lines = help_text + [""] + ascii_art
 
     pos = 0
@@ -577,12 +540,10 @@ NOTES
     while True:
         win.erase()
 
-        # Border
         win.attron(curses.color_pair(C_BORDER))
         win.border()
         win.attroff(curses.color_pair(C_BORDER))
 
-        # Content
         for idx in range(box_h - 2):
             line_idx = pos + idx
             if line_idx >= len(content_lines):
@@ -590,7 +551,6 @@ NOTES
 
             line = content_lines[line_idx]
 
-            # ── Color rules (same logic, fixed) ──
             if line_idx == 0:
                 attr = curses.color_pair(C_HDR) | curses.A_BOLD
             elif line.strip().isupper() and not line.startswith("PRESS"):
@@ -608,7 +568,6 @@ NOTES
 
             sadd(win, idx + 1, x_pos, line[: box_w - 4], attr)
 
-        # Scrollbar
         if max_pos > 0:
             pct = int(pos / max_pos * (box_h - 3))
             for i in range(box_h - 2):
@@ -619,18 +578,15 @@ NOTES
 
         key = win.getch()
 
-        # ── Exit ─────────────────────────────
         if key in (27, ord("q"), ord("Q")):
             break
 
-        # ── Line scroll ──────────────────────
         elif key in (curses.KEY_DOWN, ord("j")):
             pos = min(pos + 1, max_pos)
 
         elif key in (curses.KEY_UP, ord("k")):
             pos = max(pos - 1, 0)
 
-        # ── Page scroll ──────────────────────
         elif key == curses.KEY_PPAGE:
             pos = max(0, pos - (box_h - 2))
 
@@ -638,19 +594,11 @@ NOTES
             pos = min(max_pos, pos + (box_h - 2))
 
 
-# ─────────────────────────────────────────────────────────────
-#  TUI draw
-# ─────────────────────────────────────────────────────────────
 HINT = " jk/↑↓:move  SPC:toggle  N:add  E:rename  D:del  A:apply  R:refresh  ?:help  Q:quit"
 NAME_W = 13
 
-# Entry-row color matrix: (is_cursor, state) -> color_pair_index, bold
-#   state: "live_sel"   = live + selected (no change)
-#          "live_desel" = live + deselected (pending removal)
-#          "dead_sel"   = not live + selected (pending add)
-#          "dead_desel" = not live + deselected (neutral)
+
 _ROW_COLORS = {
-    # (cursor, state)          pair        bold
     (True, "live_sel"): (C_CUR_LIVE, True),
     (True, "live_desel"): (C_CUR_PDEL, True),
     (True, "dead_sel"): (C_CUR_PADD, True),
@@ -698,16 +646,13 @@ def draw_ui(
         curses.doupdate()
         return
 
-    # ── Title bar ──────────────────────────────
     title = f"  AERIS · Avionic Ethernet Rig IP Selector  \u25b8  {CON_ID}  "
     sadd(stdscr, 0, 0, title.ljust(w - 1), curses.color_pair(C_HDR) | curses.A_BOLD)
     ts = now_ts()
     sadd(stdscr, 0, w - len(ts) - 2, ts, curses.color_pair(C_HDR) | curses.A_DIM)
 
-    # ── Key hint bar ───────────────────────────
     sadd(stdscr, 1, 0, HINT[: w - 1], curses.color_pair(C_HINT))
 
-    # ── Status panel: LIVE / ADD / DEL ─────────
     new_ips = [entries[i]["ip"] for i in sorted(selected)]
     pend_add = [ip for ip in new_ips if ip not in current_ips]
     pend_del = [ip for ip in current_ips if ip not in new_ips]
@@ -745,14 +690,11 @@ def draw_ui(
     row += 1
     list_top = row
 
-    # ── Entry list ─────────────────────────────
-    # Reserve bottom rows: 1 border + log_visible + 1 status
-    LOG_PANEL_H = 7  # lines reserved for log (border + entries)
-    list_bot = h - LOG_PANEL_H - 1  # exclusive
+    LOG_PANEL_H = 7
+    list_bot = h - LOG_PANEL_H - 1
     list_h = max(1, list_bot - list_top)
 
-    # Build flat render list with section headers injected
-    render = []  # each item: ("header", label) | ("entry", idx)
+    render = []
     prev_type = None
     for idx, e in enumerate(entries):
         if e["type"] != prev_type:
@@ -760,8 +702,6 @@ def draw_ui(
             prev_type = e["type"]
         render.append(("entry", idx))
 
-    # Clamp scroll so cursor's entry row stays visible
-    # First find cursor's render index
     cursor_render = next(
         (
             ri
@@ -770,9 +710,9 @@ def draw_ui(
         ),
         0,
     )
-    # entry_scroll is in render-lines; clamp it
+
     entry_scroll = max(0, min(entry_scroll, max(0, len(render) - list_h)))
-    # Auto-scroll to keep cursor visible
+
     if cursor_render < entry_scroll:
         entry_scroll = cursor_render
     elif cursor_render >= entry_scroll + list_h:
@@ -802,22 +742,20 @@ def draw_ui(
             sadd(stdscr, rrow, 0, line[: w - 1], _row_attr(is_cur, is_live, is_sel))
         rrow += 1
 
-    # Scroll indicator (right margin)
     if len(render) > list_h:
         pct = int(entry_scroll / max(1, len(render) - list_h) * (list_h - 1))
         for li in range(list_h):
             ch = "\u2588" if li == pct else "\u2591"
             sadd(stdscr, list_top + li, w - 2, ch, curses.color_pair(C_BORDER))
 
-    # ── Log panel ──────────────────────────────
     log_top = h - LOG_PANEL_H - 1
     hln(stdscr, log_top, 0, w - 1, curses.color_pair(C_BORDER))
     sadd(stdscr, log_top, 2, " LOG ", curses.color_pair(C_SECTION) | curses.A_BOLD)
 
-    log_rows = LOG_PANEL_H - 1  # usable lines inside panel
+    log_rows = LOG_PANEL_H - 1
     log_max = max(0, len(log) - log_rows)
     log_scroll = max(0, min(log_scroll, log_max))
-    # Default: pin to bottom (newest)
+
     if log_scroll == 0:
         visible_log = log[-log_rows:]
     else:
@@ -835,14 +773,12 @@ def draw_ui(
         attr = curses.color_pair(pair) | (curses.A_BOLD if bold else 0)
         sadd(stdscr, log_top + 1 + i, 1, f"[{stamp}] {msg}"[: w - 2], attr)
 
-    # Scroll indicator for log
     if len(log) > log_rows:
         pct = int((1 - log_scroll / max(1, log_max)) * (log_rows - 1))
         for li in range(log_rows):
             ch = "\u2588" if li == pct else "\u2591"
             sadd(stdscr, log_top + 1 + li, w - 2, ch, curses.color_pair(C_BORDER))
 
-    # ── Status bar ─────────────────────────────
     sadd(
         stdscr,
         h - 1,
@@ -855,9 +791,6 @@ def draw_ui(
     curses.doupdate()
 
 
-# ─────────────────────────────────────────────────────────────
-#  Main loop
-# ─────────────────────────────────────────────────────────────
 def ui_loop(stdscr):
     init_colors()
     curses.curs_set(0)
@@ -902,14 +835,12 @@ def ui_loop(stdscr):
         list_h = max(1, list_bot - list_top)
         log_rows = LOG_PANEL_H - 1
 
-        # ── Navigation ────────────────────────
         if key in (curses.KEY_UP, ord("k"), ord("K")):
             cursor = (cursor - 1) % max(1, len(entries))
 
         elif key in (curses.KEY_DOWN, ord("j"), ord("J")):
             cursor = (cursor + 1) % max(1, len(entries))
 
-        # ── MAIN PANEL PAGING ─────────────────
         elif key == curses.KEY_PPAGE:
             cursor = max(0, cursor - list_h)
             entry_scroll = max(0, entry_scroll - list_h)
@@ -918,27 +849,23 @@ def ui_loop(stdscr):
             cursor = min(len(entries) - 1, cursor + list_h)
             entry_scroll += list_h
 
-        # ── LOG PANEL PAGING (Shift+Pg) ───────
         elif key == curses.KEY_SPREVIOUS:
             log_scroll = min(len(log), log_scroll + log_rows)
 
         elif key == curses.KEY_SNEXT:
             log_scroll = max(0, log_scroll - log_rows)
 
-        # ── Fine log scroll ───────────────────
         elif key == ord("["):
             log_scroll = min(max(0, len(log) - 1), log_scroll + 1)
 
         elif key == ord("]"):
             log_scroll = max(0, log_scroll - 1)
 
-        # ── Toggle ────────────────────────────
         elif key == ord(" "):
             selected.symmetric_difference_update({cursor})
             ip = entries[cursor]["ip"]
             status = f"{ip} {'selected' if cursor in selected else 'deselected'}"
 
-        # ── Add custom IP ─────────────────────
         elif key in (ord("n"), ord("N")):
             ip = curses_input(stdscr, "New IP (x.x.x.x/prefix):")
             if ip is None:
@@ -964,7 +891,6 @@ def ui_loop(stdscr):
                     log_append(log, "OK", f"Added {name} ({ip})")
                     status = f"Added {name}"
 
-        # ── Rename custom ─────────────────────
         elif key in (ord("e"), ord("E")):
             e = entries[cursor]
             if e["type"] != "custom":
@@ -983,7 +909,6 @@ def ui_loop(stdscr):
                     log_append(log, "OK", f"Renamed: {old} -> {new_name}")
                     status = f"Renamed to {new_name}"
 
-        # ── Delete custom ─────────────────────
         elif key in (ord("d"), ord("D")):
             e = entries[cursor]
             if e["type"] != "custom":
@@ -997,7 +922,6 @@ def ui_loop(stdscr):
                 log_append(log, "OK", f"Deleted {e['name']} ({e['ip']})")
                 status = f"Deleted {e['name']}"
 
-        # ── Apply ─────────────────────────────
         elif key in (ord("a"), ord("A")):
             new_ips = [entries[i]["ip"] for i in sorted(selected)]
             if not new_ips:
@@ -1029,25 +953,19 @@ def ui_loop(stdscr):
                     log_append(log, "INFO", "Apply cancelled")
                     status = "Cancelled"
 
-        # ── Refresh ───────────────────────────
         elif key in (ord("r"), ord("R")):
             current_ips = get_active_ips(CON_ID)
             selected = {i for i, e in enumerate(entries) if e["ip"] in current_ips}
             log_append(log, "INFO", f"Refreshed: {', '.join(current_ips) or '—'}")
             status = "Refreshed"
 
-        # ── Help popup ─────────────────────────
         elif key == ord("?"):
             help_popup(stdscr)
 
-        # ── Quit ──────────────────────────────
         elif key in (ord("q"), ord("Q"), 27):
             break
 
 
-# ─────────────────────────────────────────────────────────────
-#  Entry point
-# ─────────────────────────────────────────────────────────────
 def main():
     try:
         curses.wrapper(ui_loop)
