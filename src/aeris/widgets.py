@@ -270,8 +270,8 @@ _PRESS_LINE = "PRESS Q / ESC to close"
 def help_popup(stdscr) -> None:
     curses.curs_set(0)
     h, w = stdscr.getmaxyx()
-    box_w = min(100, w - 4)
-    box_h = min(h - 4, 28)
+    box_w = min(120, w - 4)
+    box_h = min(h - 4, 35)
     box_y = (h - box_h) // 2
     box_x = (w - box_w) // 2
 
