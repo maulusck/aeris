@@ -1,22 +1,31 @@
 """
 AERIS · modal widgets — input box, confirm dialog, help popup
 """
+
 import curses
 from aeris.colors import (
-    C_INPUT, C_SECTION, C_BORDER, C_HDR, C_HINT,
-    C_CURSOR, C_PEND_ADD, C_PEND_DEL, C_DIM,
+    C_INPUT,
+    C_SECTION,
+    C_BORDER,
+    C_HDR,
+    C_HINT,
+    C_CURSOR,
+    C_PEND_ADD,
+    C_PEND_DEL,
+    C_DIM,
 )
 from aeris.drawing import sadd, draw_scrollbar
 from aeris.config import LOG_PANEL_H
 
-NAME_W = 13   # max visible name width in entry list
+NAME_W = 13  # max visible name width in entry list
 
 
 # ─────────────────────────────────────────────────────────────
 #  Floating input box
 # ─────────────────────────────────────────────────────────────
-def curses_input(stdscr, prompt: str, prefill: str = "",
-                 maxlen: int = 40) -> str | None:
+def curses_input(
+    stdscr, prompt: str, prefill: str = "", maxlen: int = 40
+) -> str | None:
     """
     Floating amber input box with full cursor editing.
     Returns stripped string, or None on Esc.
@@ -33,24 +42,24 @@ def curses_input(stdscr, prompt: str, prefill: str = "",
         curses.curs_set(0)
         return None
 
-    inp_a = curses.color_pair(C_INPUT)   | curses.A_BOLD
+    inp_a = curses.color_pair(C_INPUT) | curses.A_BOLD
     lbl_a = curses.color_pair(C_SECTION) | curses.A_BOLD
 
     win.attron(inp_a)
     win.border()
     win.attroff(inp_a)
 
-    label   = f" {prompt} "
+    label = f" {prompt} "
     field_x = 2 + len(label)
     field_w = max(4, box_w - field_x - 3)
     sadd(win, 1, 2, label, lbl_a)
 
-    buf  = list(prefill[:maxlen])
+    buf = list(prefill[:maxlen])
     cpos = len(buf)
 
     def redraw() -> None:
         start = max(0, cpos - field_w + 1)
-        view  = "".join(buf)[start: start + field_w]
+        view = "".join(buf)[start : start + field_w]
         sadd(win, 1, field_x, view.ljust(field_w), inp_a)
         try:
             win.move(1, field_x + (cpos - start))
@@ -90,8 +99,7 @@ def curses_input(stdscr, prompt: str, prefill: str = "",
 # ─────────────────────────────────────────────────────────────
 #  Confirm dialog
 # ─────────────────────────────────────────────────────────────
-def confirm_dialog(stdscr, removing: list[str],
-                   adding: list[str]) -> bool:
+def confirm_dialog(stdscr, removing: list[str], adding: list[str]) -> bool:
     h, w = stdscr.getmaxyx()
 
     rows: list[tuple[str, int]] = [
@@ -105,8 +113,7 @@ def confirm_dialog(stdscr, removing: list[str],
         rows.append(("  (no diff)", curses.color_pair(C_DIM)))
     rows += [
         ("", 0),
-        ("  [Y] apply   [N] cancel",
-         curses.color_pair(C_SECTION) | curses.A_BOLD),
+        ("  [Y] apply   [N] cancel", curses.color_pair(C_SECTION) | curses.A_BOLD),
     ]
 
     box_h = min(h - 4, len(rows) + 2)
@@ -117,10 +124,10 @@ def confirm_dialog(stdscr, removing: list[str],
     try:
         win = curses.newwin(box_h, box_w, box_y, box_x)
     except curses.error:
-        return False   # fail-safe: never auto-apply
+        return False  # fail-safe: never auto-apply
 
     win.keypad(True)
-    pos     = 0
+    pos = 0
     max_pos = max(0, len(rows) - (box_h - 2))
     bar_col = box_w - 2
     bar_atr = curses.color_pair(C_BORDER)
@@ -138,8 +145,7 @@ def confirm_dialog(stdscr, removing: list[str],
             text, attr = rows[ri]
             sadd(win, i + 1, 1, text[: box_w - 2], attr)
 
-        draw_scrollbar(win, 1, box_h - 2, bar_col,
-                       len(rows), pos, bar_atr)
+        draw_scrollbar(win, 1, box_h - 2, bar_col, len(rows), pos, bar_atr)
         win.refresh()
 
         ch = win.getch()
@@ -251,6 +257,11 @@ _ASCII_ART = """\
                                                     +%%#**++=::
                                                   :*#*+==-:::.
                                                 :*+: :.
+
+True strength comes from our ability to forgive -
+                            to forge ahead in the hope of making things right.
+                                                                ~ Aeris
+
 """.splitlines()
 
 _PRESS_LINE = "PRESS Q / ESC to close"
@@ -272,7 +283,7 @@ def help_popup(stdscr) -> None:
         return
 
     win.keypad(True)
-    pos     = 0
+    pos = 0
     max_pos = max(0, len(content) - (box_h - 2))
     bar_col = box_w - 2
     bar_atr = curses.color_pair(C_BORDER)
@@ -305,8 +316,7 @@ def help_popup(stdscr) -> None:
                 x_pos = max(2, (box_w - len(line)) // 2)
             sadd(win, idx + 1, x_pos, line[: box_w - 4], attr)
 
-        draw_scrollbar(win, 1, box_h - 2, bar_col,
-                       len(content), pos, bar_atr)
+        draw_scrollbar(win, 1, box_h - 2, bar_col, len(content), pos, bar_atr)
         win.refresh()
 
         key = win.getch()
