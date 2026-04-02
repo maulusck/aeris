@@ -3,3 +3,4 @@ state.log
 *.egg-info
 *.pyc
 __pycache___
+.backup

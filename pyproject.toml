@@ -3,13 +3,13 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name            = "aeris-ip-switcher"
-version         = "1.0.0"
-description     = "AERIS · Avionic Ethernet Rig IP Selector — curses TUI for nmcli multi-IP management"
-readme          = "README.md"
-license         = { text = "MIT" }
+name = "aeris-ip-switcher"
+version = "1.0.0"
+description = "AERIS · Avionic Ethernet Rig IP Selector — curses TUI for nmcli multi-IP management"
+readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.10"
-keywords        = ["nmcli", "network", "ip", "tui", "curses", "ethernet"]
+keywords = ["nmcli", "network", "ip", "tui", "curses", "ethernet"]
 
 [project.scripts]
 aeris = "aeris.app:main"
@@ -17,3 +17,7 @@ aeris = "aeris.app:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["aeris*"]
+
+[tool.black]
+line-length = 160
+target-version = ["py312"]

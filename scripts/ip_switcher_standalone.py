@@ -3,14 +3,13 @@ AERIS · Avionic Ethernet Rig IP Selector
 """
 
 import curses
-import subprocess
-import traceback
-import json
-import time
 import ipaddress
-from pathlib import Path
+import json
+import subprocess
+import time
+import traceback
 from datetime import datetime
-
+from pathlib import Path
 
 NMCLI = "./nmcli"
 CON_ID = "eth-operator"
@@ -192,9 +191,7 @@ def load_custom():
 
 
 def save_custom(entries):
-    data = [
-        {"name": e["name"], "ip": e["ip"]} for e in entries if e["type"] == "custom"
-    ]
+    data = [{"name": e["name"], "ip": e["ip"]} for e in entries if e["type"] == "custom"]
     try:
         STATE_FILE.write_text(json.dumps({"custom_ips": data}, indent=2))
     except Exception:
@@ -203,9 +200,7 @@ def save_custom(entries):
 
 def run_nmcli(args, timeout=15):
     try:
-        r = subprocess.run(
-            [NMCLI] + args, capture_output=True, text=True, timeout=timeout
-        )
+        r = subprocess.run([NMCLI] + args, capture_output=True, text=True, timeout=timeout)
         return r.stdout.strip(), r.stderr.strip(), r.returncode
     except FileNotFoundError:
         return "", f"{NMCLI}: not found", 1
@@ -703,11 +698,7 @@ def draw_ui(
         render.append(("entry", idx))
 
     cursor_render = next(
-        (
-            ri
-            for ri, item in enumerate(render)
-            if item[0] == "entry" and item[1] == cursor
-        ),
+        (ri for ri, item in enumerate(render) if item[0] == "entry" and item[1] == cursor),
         0,
     )
 
@@ -797,9 +788,7 @@ def ui_loop(stdscr):
     stdscr.keypad(True)
     stdscr.timeout(500)
 
-    entries = [
-        {"name": d["name"], "ip": d["ip"], "type": "predefined"} for d in PREDEFINED
-    ]
+    entries = [{"name": d["name"], "ip": d["ip"], "type": "predefined"} for d in PREDEFINED]
     for rec in load_custom():
         entries.append({"name": rec["name"], "ip": rec["ip"], "type": "custom"})
 
@@ -879,12 +868,7 @@ def ui_loop(stdscr):
                     log_append(log, "ERR", f"Duplicate: {ip}")
                     status = "Duplicate"
                 else:
-                    name = (
-                        curses_input(
-                            stdscr, "Label (blank = use IP):", prefill="", maxlen=NAME_W
-                        )
-                        or ip
-                    )
+                    name = curses_input(stdscr, "Label (blank = use IP):", prefill="", maxlen=NAME_W) or ip
                     entries.append({"name": name, "ip": ip, "type": "custom"})
                     selected.add(len(entries) - 1)
                     save_custom(entries)
@@ -897,9 +881,7 @@ def ui_loop(stdscr):
                 log_append(log, "ERR", "Predefined labels are fixed")
                 status = "Cannot rename predefined"
             else:
-                new_name = curses_input(
-                    stdscr, "New label:", prefill=e["name"], maxlen=NAME_W
-                )
+                new_name = curses_input(stdscr, "New label:", prefill=e["name"], maxlen=NAME_W)
                 if new_name is None:
                     status = "Cancelled"
                 elif new_name:
