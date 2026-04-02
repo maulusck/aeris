@@ -1,4 +1,5 @@
-/state
+/state/
+/dist/
 *.egg-info
 *.pyc
 __pycache___
