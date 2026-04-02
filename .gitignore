@@ -1,5 +1,4 @@
-ips.txt
-state.log
+/state
 *.egg-info
 *.pyc
 __pycache___
