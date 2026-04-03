@@ -8,7 +8,7 @@ version = "1.0.0"
 description = "AERIS · Avionic Ethernet Rig IP Selector — curses TUI for nmcli multi-IP management"
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 keywords = ["nmcli", "network", "ip", "tui", "curses", "ethernet"]
 
 [project.scripts]

@@ -1,14 +1,22 @@
 """
 AERIS · nmcli wrappers
+
+Uses `nmcli -g` (machine-readable, tab-separated) for field extraction
+instead of parsing human-readable output — this is stable across nmcli
+versions and locale settings.
 """
 
+from __future__ import annotations
+
 import subprocess
+from collections import deque
+from typing import List, Optional, Tuple
 
 from aeris.config import IFACE, NMCLI
 from aeris.utils import log_append
 
 
-def run_nmcli(args: list[str], timeout: int = 15) -> tuple[str, str, int]:
+def run_nmcli(args: List[str], timeout: int = 15) -> Tuple[str, str, int]:
     try:
         r = subprocess.run(
             [NMCLI] + args,
@@ -23,18 +31,28 @@ def run_nmcli(args: list[str], timeout: int = 15) -> tuple[str, str, int]:
         return "", "nmcli: timed out", 1
 
 
-def get_active_ips(con_id: str) -> list[str]:
-    out, _, code = run_nmcli(["con", "show", con_id], timeout=5)
-    if code != 0:
+def get_active_ips(con_id: str) -> List[str]:
+    """
+    Return the list of IPv4 addresses currently assigned to *con_id*.
+
+    Uses `nmcli -g ipv4.addresses con show <id>` for machine-readable
+    output that is stable across nmcli versions and locale settings.
+    """
+    out, _, code = run_nmcli(
+        ["-g", "ipv4.addresses", "con", "show", con_id],
+        timeout=5,
+    )
+    if code != 0 or not out:
         return []
-    for line in out.splitlines():
-        if line.startswith("ipv4.addresses"):
-            raw = line.split(":", 1)[1]
-            return [ip.strip() for ip in raw.split(",") if ip.strip()]
-    return []
+    # nmcli -g outputs comma-separated values (may be pipe-separated on
+    # older versions); handle both delimiters defensively.
+    for sep in (",", "|"):
+        if sep in out:
+            return [ip.strip() for ip in out.split(sep) if ip.strip()]
+    return [out] if out else []
 
 
-def ensure_con(con_id: str, iface: str, log: list) -> None:
+def ensure_con(con_id: str, iface: str, log: deque) -> None:
     """Create the nmcli connection profile if it does not yet exist."""
     _, _, code = run_nmcli(["con", "show", con_id], timeout=5)
     if code != 0:
@@ -55,7 +73,12 @@ def ensure_con(con_id: str, iface: str, log: list) -> None:
         )
 
 
-def apply_ips(con_id: str, ips: list[str], log: list, iface: str = IFACE) -> list[str] | None:
+def apply_ips(
+    con_id: str,
+    ips: List[str],
+    log: deque,
+    iface: str = IFACE,
+) -> Optional[List[str]]:
     """
     Apply *ips* to *con_id* via nmcli mod + up.
     Returns the applied IP list on success, None on failure.

@@ -2,6 +2,8 @@
 AERIS · curses drawing primitives
 """
 
+from __future__ import annotations
+
 import curses
 
 
@@ -29,7 +31,15 @@ def hln(win, y: int, x: int, n: int, attr: int = 0) -> None:
         pass
 
 
-def draw_scrollbar(win, top: int, height: int, col: int, total: int, offset: int, attr: int) -> None:
+def draw_scrollbar(
+    win,
+    top: int,
+    height: int,
+    col: int,
+    total: int,
+    offset: int,
+    attr: int,
+) -> None:
     """
     Draw a single-column scrollbar.
 

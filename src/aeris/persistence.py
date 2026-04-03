@@ -2,12 +2,27 @@
 AERIS · persistence
 Handles profile files in ~/.config/aeris/profiles/ and
 the state.json that tracks the last active profile.
+
+Errors are no longer silently swallowed: IO failures raise AerisError
+so callers can log them properly instead of operating on stale data.
 """
+
+from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import List
 
 from aeris.config import DEFAULT_IPS, PROFILES_DIR, STATE_FILE
+
+# ── Custom exception ─────────────────────────────────────────────────────────
+
+
+class AerisError(RuntimeError):
+    """Raised when a persistence operation cannot be completed."""
+
+
+# ── Internal helpers ─────────────────────────────────────────────────────────
 
 
 def _ensure_dir() -> None:
@@ -18,17 +33,36 @@ def _profile_path(name: str) -> Path:
     return PROFILES_DIR / f"{name}.json"
 
 
-def _read_profile_file(path: Path) -> list[dict]:
-    """Return list of {name, ip} dicts from a profile JSON, or [] on error."""
+def _read_profile_file(path: Path) -> List[dict]:
+    """
+    Return list of {name, ip} dicts from a profile JSON.
+    Returns [] on missing file; raises AerisError on corrupt JSON.
+    """
+    if not path.exists():
+        return []
     try:
-        raw = json.loads(path.read_text())
-        out = []
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        out: List[dict] = []
         for r in raw.get("ips", []):
             if isinstance(r, dict) and "ip" in r:
                 out.append({"name": r.get("name", r["ip"]), "ip": r["ip"]})
         return out
-    except Exception:
-        return []
+    except (json.JSONDecodeError, OSError) as exc:
+        raise AerisError(f"Cannot read profile '{path.stem}': {exc}") from exc
+
+
+def _write_profile_file(path: Path, entries: List[dict]) -> None:
+    data = [{"name": e["name"], "ip": e["ip"]} for e in entries]
+    try:
+        path.write_text(
+            json.dumps({"ips": data}, indent=2),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        raise AerisError(f"Cannot write profile '{path.stem}': {exc}") from exc
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
 
 
 def ensure_default() -> None:
@@ -39,15 +73,7 @@ def ensure_default() -> None:
         _write_profile_file(p, DEFAULT_IPS)
 
 
-def _write_profile_file(path: Path, entries: list[dict]) -> None:
-    data = [{"name": e["name"], "ip": e["ip"]} for e in entries]
-    try:
-        path.write_text(json.dumps({"ips": data}, indent=2))
-    except Exception:
-        pass
-
-
-def list_profiles() -> list[str]:
+def list_profiles() -> List[str]:
     """Return sorted list of profile names (without .json extension)."""
     _ensure_dir()
     return sorted(p.stem for p in PROFILES_DIR.glob("*.json"))
@@ -57,13 +83,13 @@ def profile_exists(name: str) -> bool:
     return _profile_path(name).exists()
 
 
-def load_profile(name: str) -> list[dict]:
-    """Load entries for *name*. Falls back to [] if missing/corrupt."""
+def load_profile(name: str) -> List[dict]:
+    """Load entries for *name*. Falls back to [] if missing; raises on corrupt."""
     ensure_default()
     return _read_profile_file(_profile_path(name))
 
 
-def save_profile(name: str, entries: list[dict]) -> None:
+def save_profile(name: str, entries: List[dict]) -> None:
     _ensure_dir()
     _write_profile_file(_profile_path(name), entries)
 
@@ -115,15 +141,20 @@ def duplicate_profile(src: str, dst: str) -> bool:
 def load_state() -> str:
     """Return the last active profile name, defaulting to 'default'."""
     try:
-        raw = json.loads(STATE_FILE.read_text())
+        raw = json.loads(STATE_FILE.read_text(encoding="utf-8"))
         return raw.get("active_profile", "default")
-    except Exception:
+    except (FileNotFoundError, json.JSONDecodeError):
         return "default"
+    except OSError as exc:
+        raise AerisError(f"Cannot read state file: {exc}") from exc
 
 
 def save_state(active_profile: str) -> None:
     try:
         STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        STATE_FILE.write_text(json.dumps({"active_profile": active_profile}, indent=2))
-    except Exception:
-        pass
+        STATE_FILE.write_text(
+            json.dumps({"active_profile": active_profile}, indent=2),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        raise AerisError(f"Cannot write state file: {exc}") from exc
