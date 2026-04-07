@@ -3,7 +3,7 @@ requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aeris-ip-switcher"
+name = "aeris"
 version = "1.0.0"
 description = "AERIS · Avionic Ethernet Rig IP Selector — curses TUI for nmcli multi-IP management"
 readme = "README.md"
