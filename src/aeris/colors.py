@@ -201,7 +201,70 @@ def _mono_palette() -> _Palette:
     )
 
 
-# Registry of named themes
+def _matrix_palette() -> _Palette:
+    """
+    Retro-avionic matrix theme — phosphor green on black.
+    Accent colours follow classic CRT/MFD conventions:
+      green  = nominal / live
+      yellow = pending add / highlight
+      red    = pending del / error
+      cyan   = cursor / input
+    Requires a 256-colour terminal; falls back to 'mono' automatically.
+    """
+    GRB = 46  # bright phosphor green  (foreground default)
+    GRD = 28  # dim green              (borders, hints)
+    GRM = 34  # mid green              (section headers)
+    YEL = 226  # amber-yellow           (title bar bg, add pending)
+    RED = 196  # bright red             (delete / error)
+    CYN = 51  # cyan                   (cursor highlight)
+    BLK = 16  # true black             (backgrounds)
+    DGY = 232  # near-black tint        (subtle bg)
+    bg = -1  # terminal default background
+
+    return _Palette(
+        hdr_fg=BLK,
+        hdr_bg=GRB,
+        hint_fg=GRD,
+        hint_bg=DGY,
+        border_fg=GRD,
+        border_bg=bg,
+        section_fg=GRM,
+        section_bg=bg,
+        dim_fg=GRD,
+        dim_bg=bg,
+        live_fg=GRB,
+        live_bg=bg,
+        pend_add_fg=YEL,
+        pend_add_bg=bg,
+        pend_del_fg=RED,
+        pend_del_bg=bg,
+        cursor_fg=BLK,
+        cursor_bg=CYN,
+        cur_live_fg=BLK,
+        cur_live_bg=GRB,
+        cur_padd_fg=BLK,
+        cur_padd_bg=YEL,
+        cur_pdel_fg=BLK,
+        cur_pdel_bg=RED,
+        stat_liv_fg=GRM,
+        stat_liv_bg=bg,
+        stat_add_fg=YEL,
+        stat_add_bg=bg,
+        stat_del_fg=RED,
+        stat_del_bg=bg,
+        log_ok_fg=GRB,
+        log_ok_bg=bg,
+        log_err_fg=RED,
+        log_err_bg=bg,
+        log_cmd_fg=GRD,
+        log_cmd_bg=bg,
+        log_info_fg=GRM,
+        log_info_bg=bg,
+        input_fg=GRB,
+        input_bg=BLK,
+    )
+
+
 THEMES: dict[str, _Palette] = {}  # populated lazily after curses.start_color
 
 
@@ -253,6 +316,7 @@ def init_colors(theme: str = "") -> None:
     THEMES = {
         "amber": _amber_palette(),
         "mono": _mono_palette(),
+        "matrix": _matrix_palette(),
     }
 
     palette = THEMES.get(chosen, THEMES["amber"])

@@ -119,8 +119,10 @@ def draw_ui(
     # ── Pending diff (computed lazily if not pre-supplied) ────────────────────
     if pend_add is None or pend_del is None:
         new_ips = [entries[i]["ip"] for i in sorted(selected)]
-        pend_add = [ip for ip in new_ips if ip not in current_ips]
-        pend_del = [ip for ip in current_ips if ip not in new_ips]
+        current_set = set(current_ips)
+        new_set = set(new_ips)
+        pend_add = [ip for ip in new_ips if ip not in current_set]
+        pend_del = [ip for ip in current_ips if ip not in new_set]
 
     row = 3
     sadd(

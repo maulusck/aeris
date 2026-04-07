@@ -47,8 +47,10 @@ def _compute_pending(
     actually change, then cache the result.
     """
     new_ips = [entries[i]["ip"] for i in sorted(selected)]
-    pend_add = [ip for ip in new_ips if ip not in current_ips]
-    pend_del = [ip for ip in current_ips if ip not in new_ips]
+    current_set = set(current_ips)
+    new_set = set(new_ips)
+    pend_add = [ip for ip in new_ips if ip not in current_set]
+    pend_del = [ip for ip in current_ips if ip not in new_set]
     return pend_add, pend_del
 
 
@@ -221,9 +223,7 @@ def ui_loop(stdscr) -> None:
                 status = "Select IPs first"
                 log_scroll = 0
             else:
-                removing = [ip for ip in current_ips if ip not in new_ips]
-                adding = [ip for ip in new_ips if ip not in current_ips]
-                if confirm_dialog(stdscr, removing, adding):
+                if confirm_dialog(stdscr, pend_del, pend_add):
                     status = "Applying…"
                     log_scroll = 0
                     draw_ui(
