@@ -5,6 +5,13 @@ the state.json that tracks the last active profile.
 
 Errors are no longer silently swallowed: IO failures raise AerisError
 so callers can log them properly instead of operating on stale data.
+
+Ownership
+---------
+Every file and directory created here is immediately chowned to the real
+(non-root) user via config.chown_to_real_user().  This makes ``sudo aeris``
+and normal ``aeris`` (with sudoers rule) behave identically from the user's
+perspective — all config files are always theirs.
 """
 
 from __future__ import annotations
@@ -13,7 +20,7 @@ import json
 from pathlib import Path
 from typing import List
 
-from aeris.config import DEFAULT_IPS, PROFILES_DIR, STATE_FILE
+from aeris.config import DEFAULT_IPS, PROFILES_DIR, STATE_FILE, chown_to_real_user
 
 # ── Custom exception ─────────────────────────────────────────────────────────
 
@@ -27,6 +34,7 @@ class AerisError(RuntimeError):
 
 def _ensure_dir() -> None:
     PROFILES_DIR.mkdir(parents=True, exist_ok=True)
+    chown_to_real_user(PROFILES_DIR)
 
 
 def _profile_path(name: str) -> Path:
@@ -58,6 +66,7 @@ def _write_profile_file(path: Path, entries: List[dict]) -> None:
             json.dumps({"ips": data}, indent=2),
             encoding="utf-8",
         )
+        chown_to_real_user(path)
     except OSError as exc:
         raise AerisError(f"Cannot write profile '{path.stem}': {exc}") from exc
 
@@ -152,9 +161,11 @@ def load_state() -> str:
 def save_state(active_profile: str) -> None:
     try:
         STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        chown_to_real_user(STATE_FILE.parent)
         STATE_FILE.write_text(
             json.dumps({"active_profile": active_profile}, indent=2),
             encoding="utf-8",
         )
+        chown_to_real_user(STATE_FILE)
     except OSError as exc:
         raise AerisError(f"Cannot write state file: {exc}") from exc

@@ -4,6 +4,7 @@ AERIS · colour-pair constants and initialisation
 Themes
 ------
   "amber"  — 256-colour xterm palette (default; warm amber/cyan/green accents)
+  "matrix" — retro phosphor CRT: green body, amber/cyan/yellow/red/magenta accents
   "mono"   — 8-colour ANSI fallback (works on every terminal)
 
 Select via AERIS_THEME env-var or aeris.config.THEME.
