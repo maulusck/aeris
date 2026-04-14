@@ -30,6 +30,15 @@ from aeris.widgets import (
 )
 
 
+def _run_help() -> None:
+    def _inner(stdscr):
+        from aeris.widgets import help_popup
+
+        help_popup(stdscr)
+
+    curses.wrapper(_inner)
+
+
 def _load_profile_entries(profile_name: str) -> List[dict]:
     """Load entries for a profile, ensuring default exists first."""
     ensure_default()
@@ -295,7 +304,31 @@ def ui_loop(stdscr) -> None:
 
 
 def main() -> None:
+    import sys
+
+    # Lazy import to avoid circular dependency
+    from aeris import __version__
+
+    # ── CLI flags ────────────────────────────────────────────────
+    if "-v" in sys.argv or "--version" in sys.argv:
+        print(f"AERIS · Avionic Ethernet Rig IP Selector — version {__version__}")
+        return
+    if "-h" in sys.argv or "--help" in sys.argv:
+
+        def _inner(stdscr):
+            from aeris.widgets import help_popup
+
+            help_popup(stdscr)
+
+        import curses
+
+        curses.wrapper(_inner)
+        return
+
+    # ── main TUI ─────────────────────────────────────────────────
     try:
+        import curses
+
         curses.wrapper(ui_loop)
     except KeyboardInterrupt:
         print("\nExited.")

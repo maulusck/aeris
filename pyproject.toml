@@ -4,13 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aeris"
-version = "1.0.0"
+dynamic = ["version"]
 description = "AERIS · Avionic Ethernet Rig IP Selector — curses TUI for nmcli multi-IP management"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 keywords = ["nmcli", "network", "ip", "tui", "curses", "ethernet"]
 
+[tool.setuptools_scm]
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
 [project.scripts]
 aeris = "aeris.app:main"
 
