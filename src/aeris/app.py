@@ -22,10 +22,11 @@ from aeris.persistence import (
     save_state,
 )
 from aeris.tui import draw_ui
-from aeris.utils import HELP_TEXT, is_valid_ip, log_append, make_log, normalize_ip
+from aeris.utils import is_valid_ip, log_append, make_log, normalize_ip, HELP_TEXT
 from aeris.widgets import (
     NAME_W,
     confirm_dialog,
+    connection_wizard,
     curses_input,
     help_popup,
     profile_wizard,
@@ -170,7 +171,10 @@ def ui_loop(stdscr, *, active_profile: str, con_id: str, theme: str) -> None:
                     status = "Duplicate"
                     log_scroll = 0
                 else:
-                    name = curses_input(stdscr, "Label (blank = use IP):", prefill="", maxlen=NAME_W) or ip
+                    name = (
+                        curses_input(stdscr, "Label (blank = use IP):", prefill="", maxlen=NAME_W)
+                        or ip
+                    )
                     entries.append({"name": name, "ip": ip})
                     selected.add(len(entries) - 1)
                     save_profile(active_profile, entries)
@@ -216,18 +220,9 @@ def ui_loop(stdscr, *, active_profile: str, con_id: str, theme: str) -> None:
                     status = "Applying..."
                     log_scroll = 0
                     draw_ui(
-                        stdscr,
-                        entries,
-                        selected,
-                        cursor,
-                        entry_scroll,
-                        log,
-                        log_scroll,
-                        current_ips,
-                        status,
-                        active_profile,
-                        pend_add=pend_add,
-                        pend_del=pend_del,
+                        stdscr, entries, selected, cursor, entry_scroll,
+                        log, log_scroll, current_ips, status, active_profile,
+                        pend_add=pend_add, pend_del=pend_del,
                     )
                     result = apply_ips(con_id, new_ips, log)
                     if result:
@@ -252,7 +247,7 @@ def ui_loop(stdscr, *, active_profile: str, con_id: str, theme: str) -> None:
             result = profile_wizard(stdscr, active_profile)
             if result is not None and result != active_profile:
                 active_profile = result
-                save_state(active_profile)
+                save_state(active_profile, con_id)
                 entries = _load_profile_entries(active_profile)
                 current_ips = get_active_ips(con_id)
                 selected = {i for i, e in enumerate(entries) if e["ip"] in current_ips}
@@ -264,10 +259,24 @@ def ui_loop(stdscr, *, active_profile: str, con_id: str, theme: str) -> None:
                 _pending_dirty = True
             elif result == active_profile:
                 status = f"Profile: {active_profile}"
+
+        # ── connection selector ───────────────────────────────────────────────
+
+        elif key in (ord("c"), ord("C")):
+            result = connection_wizard(stdscr, con_id)
+            if result is not None and result != con_id:
+                con_id = result
+                save_state(active_profile, con_id)
+                current_ips = get_active_ips(con_id)
+                selected = {i for i, e in enumerate(entries) if e["ip"] in current_ips}
+                log_append(log, "INFO", f"Connection: '{con_id}'")
+                status = f"Connection: {con_id}"
+                log_scroll = 0
+                _pending_dirty = True
         elif key == ord("?"):
             help_popup(stdscr)
         elif key in (ord("q"), ord("Q"), 27):
-            save_state(active_profile)
+            save_state(active_profile, con_id)
             break
 
 
@@ -280,13 +289,20 @@ def _build_parser() -> argparse.ArgumentParser:
         description="AERIS · Avionic Ethernet Rig IP Selector",
         add_help=False,
     )
-    parser.add_argument("-h", "--help", action="store_true", help="Show help and exit")
-    parser.add_argument("-v", "--version", action="store_true", help="Show version and exit")
-    parser.add_argument("-p", "--profile", metavar="NAME", help="Start with this profile (default: last used)")
-    parser.add_argument("-c", "--con-id", metavar="ID", dest="con_id", help="NetworkManager connection ID (overrides AERIS_CON_ID)")
-    parser.add_argument("--theme", metavar="THEME", choices=("amber", "matrix", "mono"), help="Colour theme: amber|matrix|mono (overrides AERIS_THEME)")
-    parser.add_argument("--list-profiles", action="store_true", help="Print available profiles and exit")
-    parser.add_argument("--apply", metavar="PROFILE", help="Headless: apply all IPs in PROFILE and exit")
+    parser.add_argument("-h", "--help", action="store_true",
+                        help="Show help and exit")
+    parser.add_argument("-v", "--version", action="store_true",
+                        help="Show version and exit")
+    parser.add_argument("-p", "--profile", metavar="NAME",
+                        help="Start with this profile (default: last used)")
+    parser.add_argument("-c", "--con-id", metavar="ID", dest="con_id",
+                        help="NetworkManager connection ID (overrides AERIS_CON_ID)")
+    parser.add_argument("--theme", metavar="THEME", choices=("amber", "matrix", "mono"),
+                        help="Colour theme: amber|matrix|mono (overrides AERIS_THEME)")
+    parser.add_argument("--list-profiles", action="store_true",
+                        help="Print available profiles and exit")
+    parser.add_argument("--apply", metavar="PROFILE",
+                        help="Headless: apply all IPs in PROFILE and exit")
     return parser
 
 
@@ -310,13 +326,19 @@ def main() -> None:
             print(name)
         return
 
-    con_id: str = args.con_id or CON_ID
+    active_profile, con_id_saved = load_state()
+    if args.con_id:
+        con_id = args.con_id
+    elif con_id_saved:
+        con_id = con_id_saved
+    else:
+        con_id = CON_ID
     theme: str = args.theme or THEME
 
     if args.apply:
         sys.exit(_headless_apply(args.apply, con_id))
 
-    active_profile: str = args.profile or load_state()
+    active_profile = args.profile or active_profile
 
     try:
         curses.wrapper(ui_loop, active_profile=active_profile, con_id=con_id, theme=theme)

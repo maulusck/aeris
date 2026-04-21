@@ -33,8 +33,8 @@ OPTIONS
   -h, --help              Show this help and exit
   -v, --version           Show version and exit
   -p, --profile NAME      Start with named profile (default: last used)
-  -c, --con-id ID         NetworkManager connection ID
-                          (overrides AERIS_CON_ID)
+  -c, --con-id ID         Override saved connection for this session
+                          (use C inside TUI to switch and persist)
       --theme THEME       Colour theme: amber | matrix | mono
                           (overrides AERIS_THEME)
       --list-profiles     Print available profiles and exit
@@ -45,7 +45,8 @@ KEYBINDINGS
   ↓ / j        Move cursor down        A   Apply selected IPs
   SPC          Toggle selection        R   Refresh live IPs
   N            Add IP entry            P   Profile manager
-  E            Rename entry            ?   Help popup   Q/ESC  Quit
+  E            Rename entry            C   Connection selector
+  ?            Help popup              Q/ESC  Quit
 
 DESCRIPTION
   Select, add, rename, and apply IPv4 addresses to the Ethernet interface.

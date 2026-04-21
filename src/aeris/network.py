@@ -31,6 +31,56 @@ def run_nmcli(args: List[str], timeout: int = 15) -> Tuple[str, str, int]:
         return "", "nmcli: timed out", 1
 
 
+def list_connections() -> List[dict]:
+    """
+    Return all nmcli connections as a list of dicts:
+      {name, uuid, type, device, state}
+
+    Uses `nmcli -g` (machine-readable) for locale-stable output.
+    Returns [] if nmcli is unavailable or returns no connections.
+    """
+    fields = "NAME,UUID,TYPE,DEVICE,STATE"
+    out, _, code = run_nmcli(["-g", fields, "con", "show"], timeout=5)
+    if code != 0 or not out:
+        return []
+    result = []
+    for line in out.splitlines():
+        # nmcli -g separates fields with colons; colons inside values are
+        # escaped as \:  — we split on unescaped colons only.
+        parts = _split_nmcli_fields(line, n=5)
+        if len(parts) < 5:
+            continue
+        result.append({
+            "name":   parts[0],
+            "uuid":   parts[1],
+            "type":   parts[2],
+            "device": parts[3] or "--",
+            "state":  parts[4] or "disconnected",
+        })
+    return result
+
+
+def _split_nmcli_fields(line: str, n: int) -> List[str]:
+    """Split a nmcli -g output line on unescaped colons into at most n fields."""
+    parts: List[str] = []
+    current: List[str] = []
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if ch == "\\" and i + 1 < len(line) and line[i + 1] == ":":
+            current.append(":")
+            i += 2
+        elif ch == ":" and len(parts) < n - 1:
+            parts.append("".join(current))
+            current = []
+            i += 1
+        else:
+            current.append(ch)
+            i += 1
+    parts.append("".join(current))
+    return parts
+
+
 def get_active_ips(con_id: str) -> List[str]:
     """
     Return the list of IPv4 addresses currently assigned to *con_id*.

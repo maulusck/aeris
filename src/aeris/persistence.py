@@ -147,23 +147,25 @@ def duplicate_profile(src: str, dst: str) -> bool:
     return True
 
 
-def load_state() -> str:
-    """Return the last active profile name, defaulting to 'default'."""
+def load_state() -> tuple:
+    """Return (active_profile, con_id) — both default if missing."""
+    from aeris.config import CON_ID as _DEFAULT_CON
     try:
         raw = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-        return raw.get("active_profile", "default")
+        return raw.get("active_profile", "default"), raw.get("con_id", _DEFAULT_CON)
     except (FileNotFoundError, json.JSONDecodeError):
-        return "default"
+        return "default", _DEFAULT_CON
     except OSError as exc:
         raise AerisError(f"Cannot read state file: {exc}") from exc
 
 
-def save_state(active_profile: str) -> None:
+def save_state(active_profile: str, con_id: str) -> None:
+    from aeris.config import CON_ID as _DEFAULT_CON
     try:
         STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         chown_to_real_user(STATE_FILE.parent)
         STATE_FILE.write_text(
-            json.dumps({"active_profile": active_profile}, indent=2),
+            json.dumps({"active_profile": active_profile, "con_id": con_id}, indent=2),
             encoding="utf-8",
         )
         chown_to_real_user(STATE_FILE)

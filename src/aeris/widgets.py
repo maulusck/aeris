@@ -497,6 +497,168 @@ def profile_wizard(stdscr, active_profile: str) -> Optional[str]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Connection wizard  (nmcli connection selector)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_CON_HINT_MAIN  = " jk/↑↓:move  ENTER:select  F:filter  ESC/Q:close"
+_CON_HINT_EMPTY = " No nmcli connections found"
+_CON_TYPE_W     = 14
+_CON_DEV_W      = 10
+
+
+def connection_wizard(stdscr, active_con_id: str) -> Optional[str]:
+    """
+    Floating popup listing all nmcli connections.
+
+    Returns the selected connection name, or *active_con_id* unchanged if
+    the user closes without selecting.  Returns None on hard failure.
+
+    Columns: state-dot  name  type  device
+    F toggles a filter that hides loopback/bridge/wireguard types.
+    Connections list is fetched once on open; R refreshes it.
+    """
+    from aeris.network import list_connections
+
+    curses.curs_set(0)
+
+    h, w = stdscr.getmaxyx()
+    box_w = min(w - 4, 76)
+    box_h = min(h - 4, 24)
+    box_y = (h - box_h) // 2
+    box_x = (w - box_w) // 2
+
+    try:
+        win = curses.newwin(box_h, box_w, box_y, box_x)
+    except curses.error:
+        return None
+
+    win.keypad(True)
+    win.nodelay(False)
+
+    _HIDDEN_TYPES = frozenset({"loopback", "bridge", "tun", "wireguard", "dummy"})
+
+    def _fetch(filter_on: bool) -> List[dict]:
+        cons = list_connections()
+        if filter_on:
+            cons = [c for c in cons if c["type"] not in _HIDDEN_TYPES]
+        return cons
+
+    filter_on = True
+    connections: List[dict] = _fetch(filter_on)
+    cursor = next((i for i, c in enumerate(connections) if c["name"] == active_con_id), 0)
+    list_h = box_h - 5
+    hint_msg = _CON_HINT_MAIN
+
+    # colour shortcuts
+    _a_border  = curses.color_pair(C_BORDER)
+    _a_hdr     = curses.color_pair(C_HDR)    | curses.A_BOLD
+    _a_hint    = curses.color_pair(C_HINT)
+    _a_cur     = curses.color_pair(C_CURSOR) | curses.A_BOLD
+    _a_cur_act = curses.color_pair(C_CUR_LIVE) | curses.A_BOLD
+    _a_active  = curses.color_pair(C_LOG_OK) | curses.A_BOLD
+    _a_dim     = curses.color_pair(C_DIM)
+    _a_add     = curses.color_pair(C_PEND_ADD)
+    _a_del     = curses.color_pair(C_PEND_DEL)
+
+    name_w = max(10, box_w - _CON_TYPE_W - _CON_DEV_W - 8)
+
+    while True:
+        cursor = max(0, min(cursor, len(connections) - 1)) if connections else 0
+        scroll = 0
+        if connections:
+            scroll = max(0, min(cursor - list_h + 1, max(0, len(connections) - list_h)))
+            if cursor < scroll:
+                scroll = cursor
+
+        win.erase()
+        win.attron(_a_border)
+        win.border()
+        win.attroff(_a_border)
+
+        title = " CONNECTIONS "
+        sadd(win, 0, (box_w - len(title)) // 2, title, _a_hdr)
+
+        filt_tag = "[filter:on]" if filter_on else "[filter:off]"
+        hint_full = f"{hint_msg}  {filt_tag}"
+        sadd(win, 1, 1, hint_full[: box_w - 2], _a_hint)
+        hint_msg = _CON_HINT_MAIN
+
+        # column header
+        col_hdr = f"  {'NAME':<{name_w}} {'TYPE':<{_CON_TYPE_W}} {'DEVICE':<{_CON_DEV_W}}"
+        sadd(win, 2, 1, col_hdr[: box_w - 2], curses.color_pair(C_SECTION) | curses.A_BOLD)
+
+        bar_col = box_w - 2
+        for row_i in range(list_h):
+            ci = scroll + row_i
+            screen_row = 3 + row_i
+            if ci >= len(connections):
+                break
+            c = connections[ci]
+            is_active = c["name"] == active_con_id
+            is_cursor = ci == cursor
+            is_up = "activated" in c["state"]
+
+            dot = "●" if is_up else "○"
+            if is_cursor and is_active:
+                attr = _a_cur_act
+            elif is_cursor:
+                attr = _a_cur
+            elif is_active:
+                attr = _a_active
+            else:
+                attr = _a_dim
+
+            dot_attr = (_a_add if is_up else _a_del)
+            name_col  = c["name"][:name_w].ljust(name_w)
+            type_col  = c["type"][:_CON_TYPE_W].ljust(_CON_TYPE_W)
+            dev_col   = c["device"][:_CON_DEV_W].ljust(_CON_DEV_W)
+
+            line = f"  {dot} {name_col} {type_col} {dev_col}"
+            sadd(win, screen_row, 0, line[: box_w - 2].ljust(box_w - 2), attr)
+            # re-draw just the dot in its state colour
+            sadd(win, screen_row, 3, dot, dot_attr if not is_cursor else attr)
+
+        if not connections:
+            sadd(win, 3, 2, _CON_HINT_EMPTY, _a_dim)
+
+        draw_scrollbar(win, 3, list_h, bar_col, len(connections), scroll, _a_border)
+
+        footer = "ENTER:select  F:filter  R:refresh  Q:close"
+        sadd(win, box_h - 2, 1, footer[: box_w - 2], _a_dim)
+        win.refresh()
+
+        key = win.getch()
+
+        if key in (27, ord("q"), ord("Q")):
+            return active_con_id
+
+        elif key in (curses.KEY_UP, ord("k"), ord("K")):
+            cursor = (cursor - 1) % max(1, len(connections))
+
+        elif key in (curses.KEY_DOWN, ord("j"), ord("J")):
+            cursor = (cursor + 1) % max(1, len(connections))
+
+        elif key == curses.KEY_PPAGE:
+            cursor = max(0, cursor - list_h)
+
+        elif key == curses.KEY_NPAGE:
+            cursor = min(max(0, len(connections) - 1), cursor + list_h)
+
+        elif key in (10, 13):
+            if connections:
+                return connections[cursor]["name"]
+
+        elif key in (ord("f"), ord("F")):
+            filter_on = not filter_on
+            connections = _fetch(filter_on)
+            cursor = next((i for i, c in enumerate(connections) if c["name"] == active_con_id), 0)
+
+        elif key in (ord("r"), ord("R")):
+            connections = _fetch(filter_on)
+            cursor = next((i for i, c in enumerate(connections) if c["name"] == active_con_id), 0)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Help popup
 # ─────────────────────────────────────────────────────────────────────────────
 

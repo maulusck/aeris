@@ -1,83 +1,116 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
+
 BASE_DIR="$(dirname "$0")/../state"
 mkdir -p "$BASE_DIR"
 
+STATE_FILE="$BASE_DIR/state.db"
 LOG_FILE="$BASE_DIR/state.log"
 
 # -----------------------
-# mock connections (NAME DEVICE TYPE)
+# connection definitions
 # -----------------------
-declare -A CON_DEVICE
-declare -A CON_TYPE
-
 CONS=("eth-user" "eth-mgmt" "eth-operator")
 
-CON_DEVICE["eth-user"]="eth0"
-CON_DEVICE["eth-mgmt"]="eth1"
-CON_DEVICE["eth-operator"]="eth2"
+declare -A CON_DEVICE=(
+    ["eth-user"]="eth0"
+    ["eth-mgmt"]="eth1"
+    ["eth-operator"]="eth2"
+)
 
-CON_TYPE["eth-user"]="ethernet"
-CON_TYPE["eth-mgmt"]="ethernet"
-CON_TYPE["eth-operator"]="ethernet"
+declare -A CON_TYPE=(
+    ["eth-user"]="ethernet"
+    ["eth-mgmt"]="ethernet"
+    ["eth-operator"]="ethernet"
+)
 
-# init ip state
-for c in "${CONS[@]}"; do
-    [[ -f "$BASE_DIR/${c}.ips" ]] || echo "0.0.0.0/0" > "$BASE_DIR/${c}.ips"
-done
+declare -A CON_STATE
+
+# -----------------------
+# state persistence
+# -----------------------
+load_state() {
+    if [[ -f "$STATE_FILE" ]]; then
+        source "$STATE_FILE"
+    fi
+
+    for c in "${CONS[@]}"; do
+        [[ -z "${CON_STATE[$c]:-}" ]] && CON_STATE[$c]="deactivated"
+    done
+}
+
+save_state() {
+    : > "$STATE_FILE"
+    for c in "${CONS[@]}"; do
+        echo "CON_STATE[$c]=\"${CON_STATE[$c]}\"" >> "$STATE_FILE"
+    done
+}
+
+load_state
+
+# -----------------------
+# helpers
+# -----------------------
+err() {
+    echo "Error: $*" >&2
+    exit 10
+}
+
+is_valid_con() {
+    [[ " ${CONS[*]} " =~ " $1 " ]]
+}
 
 # -----------------------
 # parse -g
 # -----------------------
 GET_MODE=0
-FIELD=""
+FIELDS=()
 
-if [[ "$1" == "-g" ]]; then
+if [[ "${1:-}" == "-g" ]]; then
     GET_MODE=1
-    FIELD="$2"
+    IFS=',' read -ra FIELDS <<< "${2:-}"
     shift 2
 fi
 
-CMD="$1"
-SUBCMD="$2"
-CON_ID="$3"
+CMD="${1:-}"
+SUBCMD="${2:-}"
+CON_ID="${3:-}"
 
 # -----------------------
-# con show
+# connection show
 # -----------------------
 if [[ "$CMD" =~ ^(con|connection)$ && "$SUBCMD" == "show" ]]; then
 
-    # nmcli -g NAME,DEVICE,TYPE con show
+    # nmcli -g ...
     if [[ "$GET_MODE" -eq 1 ]]; then
-        IFS=',' read -ra COLS <<< "$FIELD"
-
         for c in "${CONS[@]}"; do
-            OUT=""
+            out=()
 
-            for col in "${COLS[@]}"; do
-                case "$col" in
-                    NAME)   OUT+="${c}:" ;;
-                    DEVICE) OUT+="${CON_DEVICE[$c]}:" ;;
-                    TYPE)   OUT+="${CON_TYPE[$c]}:" ;;
-                    *)
-                        OUT+="unknown:"
-                        ;;
+            for f in "${FIELDS[@]}"; do
+                case "$f" in
+                    NAME)   out+=("$c") ;;
+                    DEVICE) out+=("${CON_DEVICE[$c]}") ;;
+                    TYPE)   out+=("${CON_TYPE[$c]}") ;;
+                    STATE)  out+=("${CON_STATE[$c]}") ;;
+                    UUID)   out+=("$(echo "$c" | md5sum | cut -c1-8)") ;;
+                    *)      out+=("") ;;
                 esac
             done
 
-            echo "${OUT%:}"
+            (IFS=':'; echo "${out[*]}")
         done
-
         exit 0
     fi
 
-    # nmcli con show <name>
+    # nmcli con show <id>
     if [[ -n "$CON_ID" ]]; then
-        if [[ ! " ${CONS[*]} " =~ " $CON_ID " ]]; then
-            echo "Error: unknown connection $CON_ID" >&2
-            exit 10
-        fi
-        echo "$CON_ID"
+        is_valid_con "$CON_ID" || err "unknown connection $CON_ID"
+
+        echo "NAME: $CON_ID"
+        echo "DEVICE: ${CON_DEVICE[$CON_ID]}"
+        echo "TYPE: ${CON_TYPE[$CON_ID]}"
+        echo "STATE: ${CON_STATE[$CON_ID]}"
         exit 0
     fi
 
@@ -89,39 +122,66 @@ if [[ "$CMD" =~ ^(con|connection)$ && "$SUBCMD" == "show" ]]; then
 fi
 
 # -----------------------
-# con modify
-# -----------------------
-if [[ "$CMD" =~ ^(con|connection)$ && "$SUBCMD" =~ ^(mod|modify)$ ]]; then
-
-    if [[ ! " ${CONS[*]} " =~ " $CON_ID " ]]; then
-        echo "Error: unknown connection $CON_ID" >&2
-        exit 10
-    fi
-
-    FIELD="$4"
-    VALUE="$5"
-
-    FILE="$BASE_DIR/${CON_ID}.ips"
-
-    if [[ "$FIELD" == "ipv4.addresses" ]]; then
-        VALUE="${VALUE%\"}"
-        VALUE="${VALUE#\"}"
-        VALUE="${VALUE// /,}"
-        VALUE="${VALUE//|/,}"
-        echo "$VALUE" > "$FILE"
-        exit 0
-    fi
-
-    echo "Error: unsupported field $FIELD" >&2
-    exit 1
-fi
-
-# -----------------------
-# con up (no-op)
+# connection up
 # -----------------------
 if [[ "$CMD" =~ ^(con|connection)$ && "$SUBCMD" == "up" ]]; then
+    is_valid_con "$CON_ID" || err "unknown connection $CON_ID"
+
+    # deactivate all others (simple model)
+    for c in "${CONS[@]}"; do
+        CON_STATE[$c]="deactivated"
+    done
+
+    CON_STATE[$CON_ID]="activated"
+    save_state
+
+    echo "Connection '$CON_ID' successfully activated"
     exit 0
 fi
 
-echo "nmcli mock: unsupported args: $@" >&2
+# -----------------------
+# connection down
+# -----------------------
+if [[ "$CMD" =~ ^(con|connection)$ && "$SUBCMD" == "down" ]]; then
+    is_valid_con "$CON_ID" || err "unknown connection $CON_ID"
+
+    CON_STATE[$CON_ID]="deactivated"
+    save_state
+
+    echo "Connection '$CON_ID' successfully deactivated"
+    exit 0
+fi
+
+# -----------------------
+# connection modify
+# -----------------------
+if [[ "$CMD" =~ ^(con|connection)$ && "$SUBCMD" =~ ^(mod|modify)$ ]]; then
+    is_valid_con "$CON_ID" || err "unknown connection $CON_ID"
+
+    FIELD="${4:-}"
+    VALUE="${5:-}"
+
+    FILE="$BASE_DIR/${CON_ID}.ips"
+
+    case "$FIELD" in
+        ipv4.addresses)
+            VALUE="${VALUE%\"}"
+            VALUE="${VALUE#\"}"
+            VALUE="${VALUE// /,}"
+            VALUE="${VALUE//|/,}"
+            echo "$VALUE" > "$FILE"
+            ;;
+        *)
+            echo "Error: unsupported field $FIELD" >&2
+            exit 1
+            ;;
+    esac
+
+    exit 0
+fi
+
+# -----------------------
+# fallback
+# -----------------------
+echo "nmcli mock: unsupported args: $*" >&2
 exit 1
