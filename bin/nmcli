@@ -1,12 +1,30 @@
 #!/usr/bin/env bash
 
-mkdir -p "$(dirname "$0")/../state"
-STATE_FILE="$(dirname "$0")/../state/ips.txt"
-LOG_FILE="$(dirname "$0")/../state/state.log"
-CON_ID_EXPECTED="eth-operator"
+BASE_DIR="$(dirname "$0")/../state"
+mkdir -p "$BASE_DIR"
 
-# init default state
-[[ -f "$STATE_FILE" ]] || echo "192.168.1.10/24,10.0.0.5/24" > "$STATE_FILE"
+LOG_FILE="$BASE_DIR/state.log"
+
+# -----------------------
+# mock connections (NAME DEVICE TYPE)
+# -----------------------
+declare -A CON_DEVICE
+declare -A CON_TYPE
+
+CONS=("eth-user" "eth-mgmt" "eth-operator")
+
+CON_DEVICE["eth-user"]="eth0"
+CON_DEVICE["eth-mgmt"]="eth1"
+CON_DEVICE["eth-operator"]="eth2"
+
+CON_TYPE["eth-user"]="ethernet"
+CON_TYPE["eth-mgmt"]="ethernet"
+CON_TYPE["eth-operator"]="ethernet"
+
+# init ip state
+for c in "${CONS[@]}"; do
+    [[ -f "$BASE_DIR/${c}.ips" ]] || echo "0.0.0.0/0" > "$BASE_DIR/${c}.ips"
+done
 
 # -----------------------
 # parse -g
@@ -28,18 +46,45 @@ CON_ID="$3"
 # con show
 # -----------------------
 if [[ "$CMD" =~ ^(con|connection)$ && "$SUBCMD" == "show" ]]; then
-    if [[ "$CON_ID" != "$CON_ID_EXPECTED" ]]; then
-        echo "Error: unknown connection $CON_ID" >&2
-        exit 10
-    fi
 
-    if [[ "$GET_MODE" -eq 1 && "$FIELD" == "ipv4.addresses" ]]; then
-        cat "$STATE_FILE"
+    # nmcli -g NAME,DEVICE,TYPE con show
+    if [[ "$GET_MODE" -eq 1 ]]; then
+        IFS=',' read -ra COLS <<< "$FIELD"
+
+        for c in "${CONS[@]}"; do
+            OUT=""
+
+            for col in "${COLS[@]}"; do
+                case "$col" in
+                    NAME)   OUT+="${c}:" ;;
+                    DEVICE) OUT+="${CON_DEVICE[$c]}:" ;;
+                    TYPE)   OUT+="${CON_TYPE[$c]}:" ;;
+                    *)
+                        OUT+="unknown:"
+                        ;;
+                esac
+            done
+
+            echo "${OUT%:}"
+        done
+
         exit 0
     fi
 
-    # fallback (not really needed for your use case)
-    echo "ipv4.addresses: $(cat "$STATE_FILE")"
+    # nmcli con show <name>
+    if [[ -n "$CON_ID" ]]; then
+        if [[ ! " ${CONS[*]} " =~ " $CON_ID " ]]; then
+            echo "Error: unknown connection $CON_ID" >&2
+            exit 10
+        fi
+        echo "$CON_ID"
+        exit 0
+    fi
+
+    # nmcli con show
+    for c in "${CONS[@]}"; do
+        echo "$c"
+    done
     exit 0
 fi
 
@@ -47,7 +92,8 @@ fi
 # con modify
 # -----------------------
 if [[ "$CMD" =~ ^(con|connection)$ && "$SUBCMD" =~ ^(mod|modify)$ ]]; then
-    if [[ "$CON_ID" != "$CON_ID_EXPECTED" ]]; then
+
+    if [[ ! " ${CONS[*]} " =~ " $CON_ID " ]]; then
         echo "Error: unknown connection $CON_ID" >&2
         exit 10
     fi
@@ -55,15 +101,14 @@ if [[ "$CMD" =~ ^(con|connection)$ && "$SUBCMD" =~ ^(mod|modify)$ ]]; then
     FIELD="$4"
     VALUE="$5"
 
+    FILE="$BASE_DIR/${CON_ID}.ips"
+
     if [[ "$FIELD" == "ipv4.addresses" ]]; then
         VALUE="${VALUE%\"}"
         VALUE="${VALUE#\"}"
-
-        # normalize to comma-separated (what your Python expects)
         VALUE="${VALUE// /,}"
         VALUE="${VALUE//|/,}"
-
-        echo "$VALUE" > "$STATE_FILE"
+        echo "$VALUE" > "$FILE"
         exit 0
     fi
 
@@ -78,8 +123,5 @@ if [[ "$CMD" =~ ^(con|connection)$ && "$SUBCMD" == "up" ]]; then
     exit 0
 fi
 
-# -----------------------
-# fallback
-# -----------------------
 echo "nmcli mock: unsupported args: $@" >&2
 exit 1

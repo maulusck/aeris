@@ -39,6 +39,7 @@ from aeris.colors import (
 )
 from aeris.config import LOG_PANEL_H
 from aeris.drawing import draw_scrollbar, sadd
+from aeris.utils import HELP_TEXT as _HELP_TEXT_STR
 
 NAME_W = 13
 
@@ -499,41 +500,7 @@ def profile_wizard(stdscr, active_profile: str) -> Optional[str]:
 # Help popup
 # ─────────────────────────────────────────────────────────────────────────────
 
-_HELP_TEXT = """\
-AERIS · Avionic Ethernet Rig IP Selector
-─────────────────────────────────────────────
-
-KEYBINDINGS
-  ↑ / k        Move cursor up
-  ↓ / j        Move cursor down
-  SPC          Toggle IP selection
-  N            Add IP to profile
-  E            Rename IP entry
-  D            Delete IP from profile
-  A            Apply selected IPs
-  R            Refresh active IPs
-  P            Profile manager
-  ?            Show this help
-  Q / ESC      Quit
-
-DESCRIPTION
-  Select, add, rename, and apply IPv4 addresses to the Ethernet interface.
-  IPs are organised into profiles stored in ~/.config/aeris/profiles/.
-  The active profile is shown in the title bar.
-  The live IPs are displayed at the top; pending additions/removals are
-  highlighted in colour.
-
-EXAMPLES
-  - Toggle multiple IPs with SPC and press A to apply.
-  - Add a new IP with N, label it, then apply.
-  - Use R to refresh active IPs after changes outside AERIS.
-  - Press P to switch profiles or create new ones.
-
-NOTES
-  - All IPs within a profile are equal and fully editable.
-  - The default profile is recreated from built-in defaults if deleted.
-  - Scroll lists with ↑/↓ or j/k, exit with Q or ESC.\
-""".splitlines()
+_HELP_TEXT = _HELP_TEXT_STR.splitlines()
 
 _ASCII_ART_LINES = """\
 
