@@ -29,12 +29,12 @@ from aeris.colors import (
     C_STAT_DEL,
     C_STAT_LIV,
 )
-from aeris.config import CON_ID, LOG_PANEL_H
+from aeris.config import LOG_PANEL_H
 from aeris.drawing import draw_scrollbar, hln, sadd
 from aeris.utils import now_ts
 from aeris.widgets import NAME_W
 
-HINT = " jk/↑↓:move  SPC:toggle  N:add  E:rename  D:del" "  A:apply  R:refresh  P:profiles  [/]:log  ?:help  Q:quit"
+HINT = " jk/↑↓:move  SPC:toggle  N:add  E:rename  D:del" "  A:apply  R:refresh  P:profiles C:conns  [/]:log  ?:help  Q:quit"
 
 # ── Row-state → (color_pair_id, bold) lookup ─────────────────────────────────
 # Key: (is_cursor, state_str)
@@ -86,6 +86,7 @@ def draw_ui(
     current_ips: List[str],
     status: str,
     active_profile: str = "default",
+    con_id: str = "",
     # Pre-computed pending sets — pass from app loop to avoid recomputing
     # every frame. If None, they are computed here (first call / fallback).
     pend_add: List[str] = None,
@@ -108,7 +109,7 @@ def draw_ui(
         return entry_scroll, log_scroll
 
     # ── Title bar ─────────────────────────────────────────────────────────────
-    title = f"  AERIS · {CON_ID}  ▸  profile: {active_profile}  "
+    title = f"  AERIS · {con_id}  ▸  profile: {active_profile}  "
     sadd(stdscr, 0, 0, title.ljust(w - 1), curses.color_pair(C_HDR) | curses.A_BOLD)
     ts = now_ts()
     sadd(stdscr, 0, w - len(ts) - 2, ts, curses.color_pair(C_HDR) | curses.A_DIM)

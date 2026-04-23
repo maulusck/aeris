@@ -150,6 +150,7 @@ def duplicate_profile(src: str, dst: str) -> bool:
 def load_state() -> tuple:
     """Return (active_profile, con_id) — both default if missing."""
     from aeris.config import CON_ID as _DEFAULT_CON
+
     try:
         raw = json.loads(STATE_FILE.read_text(encoding="utf-8"))
         return raw.get("active_profile", "default"), raw.get("con_id", _DEFAULT_CON)
@@ -161,6 +162,7 @@ def load_state() -> tuple:
 
 def save_state(active_profile: str, con_id: str) -> None:
     from aeris.config import CON_ID as _DEFAULT_CON
+
     try:
         STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         chown_to_real_user(STATE_FILE.parent)

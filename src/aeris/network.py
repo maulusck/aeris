@@ -50,13 +50,15 @@ def list_connections() -> List[dict]:
         parts = _split_nmcli_fields(line, n=5)
         if len(parts) < 5:
             continue
-        result.append({
-            "name":   parts[0],
-            "uuid":   parts[1],
-            "type":   parts[2],
-            "device": parts[3] or "--",
-            "state":  parts[4] or "disconnected",
-        })
+        result.append(
+            {
+                "name": parts[0],
+                "uuid": parts[1],
+                "type": parts[2],
+                "device": parts[3] or "--",
+                "state": parts[4] or "disconnected",
+            }
+        )
     return result
 
 

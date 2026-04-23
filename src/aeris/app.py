@@ -22,7 +22,7 @@ from aeris.persistence import (
     save_state,
 )
 from aeris.tui import draw_ui
-from aeris.utils import is_valid_ip, log_append, make_log, normalize_ip, HELP_TEXT
+from aeris.utils import HELP_TEXT, is_valid_ip, log_append, make_log, normalize_ip
 from aeris.widgets import (
     NAME_W,
     confirm_dialog,
@@ -116,6 +116,7 @@ def ui_loop(stdscr, *, active_profile: str, con_id: str, theme: str) -> None:
             current_ips,
             status,
             active_profile,
+            con_id,
             pend_add=pend_add,
             pend_del=pend_del,
         )
@@ -171,10 +172,7 @@ def ui_loop(stdscr, *, active_profile: str, con_id: str, theme: str) -> None:
                     status = "Duplicate"
                     log_scroll = 0
                 else:
-                    name = (
-                        curses_input(stdscr, "Label (blank = use IP):", prefill="", maxlen=NAME_W)
-                        or ip
-                    )
+                    name = curses_input(stdscr, "Label (blank = use IP):", prefill="", maxlen=NAME_W) or ip
                     entries.append({"name": name, "ip": ip})
                     selected.add(len(entries) - 1)
                     save_profile(active_profile, entries)
@@ -220,9 +218,19 @@ def ui_loop(stdscr, *, active_profile: str, con_id: str, theme: str) -> None:
                     status = "Applying..."
                     log_scroll = 0
                     draw_ui(
-                        stdscr, entries, selected, cursor, entry_scroll,
-                        log, log_scroll, current_ips, status, active_profile,
-                        pend_add=pend_add, pend_del=pend_del,
+                        stdscr,
+                        entries,
+                        selected,
+                        cursor,
+                        entry_scroll,
+                        log,
+                        log_scroll,
+                        current_ips,
+                        status,
+                        active_profile,
+                        con_id,
+                        pend_add=pend_add,
+                        pend_del=pend_del,
                     )
                     result = apply_ips(con_id, new_ips, log)
                     if result:
@@ -289,20 +297,13 @@ def _build_parser() -> argparse.ArgumentParser:
         description="AERIS · Avionic Ethernet Rig IP Selector",
         add_help=False,
     )
-    parser.add_argument("-h", "--help", action="store_true",
-                        help="Show help and exit")
-    parser.add_argument("-v", "--version", action="store_true",
-                        help="Show version and exit")
-    parser.add_argument("-p", "--profile", metavar="NAME",
-                        help="Start with this profile (default: last used)")
-    parser.add_argument("-c", "--con-id", metavar="ID", dest="con_id",
-                        help="NetworkManager connection ID (overrides AERIS_CON_ID)")
-    parser.add_argument("--theme", metavar="THEME", choices=("amber", "matrix", "mono"),
-                        help="Colour theme: amber|matrix|mono (overrides AERIS_THEME)")
-    parser.add_argument("--list-profiles", action="store_true",
-                        help="Print available profiles and exit")
-    parser.add_argument("--apply", metavar="PROFILE",
-                        help="Headless: apply all IPs in PROFILE and exit")
+    parser.add_argument("-h", "--help", action="store_true", help="Show help and exit")
+    parser.add_argument("-v", "--version", action="store_true", help="Show version and exit")
+    parser.add_argument("-p", "--profile", metavar="NAME", help="Start with this profile (default: last used)")
+    parser.add_argument("-c", "--con-id", metavar="ID", dest="con_id", help="NetworkManager connection ID (overrides AERIS_CON_ID)")
+    parser.add_argument("--theme", metavar="THEME", choices=("amber", "matrix", "mono"), help="Colour theme: amber|matrix|mono (overrides AERIS_THEME)")
+    parser.add_argument("--list-profiles", action="store_true", help="Print available profiles and exit")
+    parser.add_argument("--apply", metavar="PROFILE", help="Headless: apply all IPs in PROFILE and exit")
     return parser
 
 
