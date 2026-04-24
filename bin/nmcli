@@ -1,187 +1,393 @@
 #!/usr/bin/env bash
+# =============================================================================
+# nmcli — mock for AERIS testing
+#
+# State lives in $AERIS_MOCK_STATE_DIR (default: <script-dir>/../state/).
+# Each connection is a directory:
+#
+#   state/
+#     connections.list          — ordered list of connection names (one per line)
+#     <con-name>/
+#       meta                    — KEY=VALUE pairs: uuid, type, device, ifname
+#       addresses               — comma-separated IPv4 CIDR strings (may be empty)
+#       active                  — present iff this connection is activated
+#
+# Supported nmcli invocations (all that AERIS uses):
+#
+#   nmcli -g NAME,UUID,TYPE,DEVICE,STATE con show
+#   nmcli -g ipv4.addresses con show <id>
+#   nmcli con show [<id>]
+#   nmcli con add type ethernet con-name <id> ifname <iface> ipv4.method manual
+#   nmcli con mod <id> ipv4.addresses <ips> ipv4.method manual
+#   nmcli con up   <id>
+#   nmcli con down <id>
+#   nmcli con delete <id>
+# =============================================================================
 
 set -euo pipefail
 
-BASE_DIR="$(dirname "$0")/../state"
-mkdir -p "$BASE_DIR"
+# ── State directory ───────────────────────────────────────────────────────────
 
-STATE_FILE="$BASE_DIR/state.db"
-LOG_FILE="$BASE_DIR/state.log"
+STATE_DIR="${AERIS_MOCK_STATE_DIR:-"$(cd "$(dirname "$0")/.." && pwd)/state"}"
+CONS_LIST="$STATE_DIR/connections.list"
 
-# -----------------------
-# connection definitions
-# -----------------------
-CONS=("eth-user" "eth-mgmt" "eth-operator")
+# ── Seed connections (created if state dir is empty) ─────────────────────────
 
-declare -A CON_DEVICE=(
-    ["eth-user"]="eth0"
-    ["eth-mgmt"]="eth1"
-    ["eth-operator"]="eth2"
+declare -a SEED_NAMES=(
+    "eth-user"
+    "eth-mgmt"
+    "eth-operator"
+    "eth-lab"
+    "lo"
+    "br-docker"
+    "wg-vpn"
 )
 
-declare -A CON_TYPE=(
+declare -A SEED_TYPE=(
     ["eth-user"]="ethernet"
     ["eth-mgmt"]="ethernet"
     ["eth-operator"]="ethernet"
+    ["eth-lab"]="ethernet"
+    ["lo"]="loopback"
+    ["br-docker"]="bridge"
+    ["wg-vpn"]="wireguard"
 )
 
-declare -A CON_STATE
+declare -A SEED_DEVICE=(
+    ["eth-user"]="eth0"
+    ["eth-mgmt"]="eth1"
+    ["eth-operator"]="eth2"
+    ["eth-lab"]="eth3"
+    ["lo"]="lo"
+    ["br-docker"]="br-docker"
+    ["wg-vpn"]="wg0"
+)
 
-# -----------------------
-# state persistence
-# -----------------------
-load_state() {
-    if [[ -f "$STATE_FILE" ]]; then
-        source "$STATE_FILE"
+declare -A SEED_IFNAME=(
+    ["eth-user"]="eth0"
+    ["eth-mgmt"]="eth1"
+    ["eth-operator"]="eth2"
+    ["eth-lab"]="eth3"
+    ["lo"]="lo"
+    ["br-docker"]="br-docker"
+    ["wg-vpn"]="wg0"
+)
+
+# eth-user starts activated with a couple of IPs so AERIS has something to show
+declare -A SEED_ACTIVE=(
+    ["eth-user"]="yes"
+)
+
+declare -A SEED_ADDRESSES=(
+    ["eth-user"]="192.168.10.1/24,192.168.10.2/24"
+    ["eth-mgmt"]=""
+    ["eth-operator"]=""
+    ["eth-lab"]=""
+    ["lo"]="127.0.0.1/8"
+    ["br-docker"]="172.17.0.1/16"
+    ["wg-vpn"]=""
+)
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+err() { echo "Error: $*" >&2; exit 10; }
+
+_con_dir()  { echo "$STATE_DIR/$1"; }
+_meta()     { echo "$STATE_DIR/$1/meta"; }
+_addr()     { echo "$STATE_DIR/$1/addresses"; }
+_active()   { echo "$STATE_DIR/$1/active"; }
+
+con_exists() { [[ -d "$(_con_dir "$1")" ]]; }
+
+# Read a single key from a connection's meta file
+meta_get() {
+    local con="$1" key="$2"
+    local mf; mf="$(_meta "$con")"
+    [[ -f "$mf" ]] || return 1
+    grep -m1 "^${key}=" "$mf" | cut -d= -f2-
+}
+
+# Write / update a key in a connection's meta file
+meta_set() {
+    local con="$1" key="$2" val="$3"
+    local mf; mf="$(_meta "$con")"
+    if grep -q "^${key}=" "$mf" 2>/dev/null; then
+        sed -i "s|^${key}=.*|${key}=${val}|" "$mf"
+    else
+        echo "${key}=${val}" >> "$mf"
     fi
+}
 
-    for c in "${CONS[@]}"; do
-        [[ -z "${CON_STATE[$c]:-}" ]] && CON_STATE[$c]="deactivated"
+# Deterministic fake UUID from connection name (stable across runs)
+_uuid() {
+    local name="$1"
+    # produce 8-4-4-4-12 hex groups from the name
+    local h; h="$(printf '%s' "$name" | md5sum | tr -d ' -')"
+    printf '%s-%s-%s-%s-%s' \
+        "${h:0:8}" "${h:8:4}" "${h:12:4}" "${h:16:4}" "${h:20:12}"
+}
+
+# List all connection names in insertion order
+list_cons() {
+    [[ -f "$CONS_LIST" ]] || return 0
+    grep -v '^[[:space:]]*$' "$CONS_LIST" || true
+}
+
+# Append a connection name to the ordered list
+_register() {
+    local name="$1"
+    # avoid duplicates
+    if ! grep -qxF "$name" "$CONS_LIST" 2>/dev/null; then
+        echo "$name" >> "$CONS_LIST"
+    fi
+}
+
+# Remove a connection name from the ordered list
+_unregister() {
+    local name="$1"
+    [[ -f "$CONS_LIST" ]] || return 0
+    local tmp; tmp="$(mktemp)"
+    grep -vxF "$name" "$CONS_LIST" > "$tmp" || true
+    mv "$tmp" "$CONS_LIST"
+}
+
+# ── Initialise state dir on first run ────────────────────────────────────────
+
+_init_state() {
+    mkdir -p "$STATE_DIR"
+    touch "$CONS_LIST"
+
+    for name in "${SEED_NAMES[@]}"; do
+        con_exists "$name" && continue
+
+        local cdir; cdir="$(_con_dir "$name")"
+        mkdir -p "$cdir"
+
+        # meta
+        cat > "$(_meta "$name")" <<EOF
+uuid=$(_uuid "$name")
+type=${SEED_TYPE[$name]}
+device=${SEED_DEVICE[$name]}
+ifname=${SEED_IFNAME[$name]}
+EOF
+
+        # addresses
+        echo "${SEED_ADDRESSES[$name]:-}" > "$(_addr "$name")"
+
+        # active flag
+        [[ "${SEED_ACTIVE[$name]:-}" == "yes" ]] && touch "$(_active "$name")" || true
+
+        _register "$name"
     done
 }
 
-save_state() {
-    : > "$STATE_FILE"
-    for c in "${CONS[@]}"; do
-        echo "CON_STATE[$c]=\"${CON_STATE[$c]}\"" >> "$STATE_FILE"
-    done
-}
+_init_state
 
-load_state
+# ── Argument parsing ──────────────────────────────────────────────────────────
 
-# -----------------------
-# helpers
-# -----------------------
-err() {
-    echo "Error: $*" >&2
-    exit 10
-}
-
-is_valid_con() {
-    [[ " ${CONS[*]} " =~ " $1 " ]]
-}
-
-# -----------------------
-# parse -g
-# -----------------------
 GET_MODE=0
-FIELDS=()
+declare -a GET_FIELDS=()
 
-if [[ "${1:-}" == "-g" ]]; then
+# Consume all leading -g <fields> flags (nmcli allows them before subcommands)
+while [[ "${1:-}" == "-g" ]]; do
     GET_MODE=1
-    IFS=',' read -ra FIELDS <<< "${2:-}"
+    IFS=',' read -ra _f <<< "${2:-}"
+    GET_FIELDS+=("${_f[@]}")
     shift 2
+done
+
+CMD="${1:-}"       # con / connection
+SUBCMD="${2:-}"    # show / up / down / mod / add / delete
+CON_ID="${3:-}"    # connection name / id
+
+# ── Dispatch ──────────────────────────────────────────────────────────────────
+
+if [[ ! "$CMD" =~ ^(con|connection)$ ]]; then
+    echo "nmcli mock: unsupported command: $CMD" >&2
+    exit 1
 fi
 
-CMD="${1:-}"
-SUBCMD="${2:-}"
-CON_ID="${3:-}"
+# ─── con show ────────────────────────────────────────────────────────────────
+if [[ "$SUBCMD" == "show" ]]; then
 
-# -----------------------
-# connection show
-# -----------------------
-if [[ "$CMD" =~ ^(con|connection)$ && "$SUBCMD" == "show" ]]; then
+    # ── nmcli -g <fields> con show  (list all — machine-readable) ────────────
+    if [[ "$GET_MODE" -eq 1 && -z "$CON_ID" ]]; then
+        # Fields: NAME UUID TYPE DEVICE STATE
+        while IFS= read -r name; do
+            [[ -z "$name" ]] && continue
+            con_exists "$name" || continue
 
-    # nmcli -g ...
-    if [[ "$GET_MODE" -eq 1 ]]; then
-        for c in "${CONS[@]}"; do
-            out=()
+                    _uuid_val="$(_uuid "$name")"
+            _type_val="$(meta_get "$name" type)"
+            _device_val="$(meta_get "$name" device)"
+            _state_val="$( [[ -f "$(_active "$name")" ]] && echo "activated" || echo "deactivated" )"
 
-            for f in "${FIELDS[@]}"; do
+            row=()
+            for f in "${GET_FIELDS[@]}"; do
                 case "$f" in
-                    NAME)   out+=("$c") ;;
-                    DEVICE) out+=("${CON_DEVICE[$c]}") ;;
-                    TYPE)   out+=("${CON_TYPE[$c]}") ;;
-                    STATE)  out+=("${CON_STATE[$c]}") ;;
-                    UUID)   out+=("$(echo "$c" | md5sum | cut -c1-8)") ;;
-                    *)      out+=("") ;;
+                    NAME)   row+=("$name") ;;
+                    UUID)   row+=("$_uuid_val") ;;
+                    TYPE)   row+=("$_type_val") ;;
+                    DEVICE) row+=("$_device_val") ;;
+                    STATE)  row+=("$_state_val") ;;
+                    *)      row+=("") ;;
                 esac
             done
+            # nmcli -g separates fields with colons
+            (IFS=':'; echo "${row[*]}")
+        done < <(list_cons)
+        exit 0
+    fi
 
-            (IFS=':'; echo "${out[*]}")
+    # ── nmcli -g ipv4.addresses con show <id>  (get IPs — machine-readable) ──
+    if [[ "$GET_MODE" -eq 1 && -n "$CON_ID" ]]; then
+        con_exists "$CON_ID" || { echo "" >&2; exit 10; }
+
+        for f in "${GET_FIELDS[@]}"; do
+            case "$f" in
+                ipv4.addresses)
+                    addr_file="$(_addr "$CON_ID")"
+                    if [[ -f "$addr_file" ]]; then
+                        cat "$addr_file"
+                    fi
+                    ;;
+                *)
+                    echo ""
+                    ;;
+            esac
         done
         exit 0
     fi
 
-    # nmcli con show <id>
+    # ── nmcli con show <id>  (human-readable; AERIS uses only exit code) ─────
     if [[ -n "$CON_ID" ]]; then
-        is_valid_con "$CON_ID" || err "unknown connection $CON_ID"
-
-        echo "NAME: $CON_ID"
-        echo "DEVICE: ${CON_DEVICE[$CON_ID]}"
-        echo "TYPE: ${CON_TYPE[$CON_ID]}"
-        echo "STATE: ${CON_STATE[$CON_ID]}"
+        con_exists "$CON_ID" || err "unknown connection '$CON_ID'"
+        _show_state="$( [[ -f "$(_active "$CON_ID")" ]] && echo "activated" || echo "deactivated" )"
+        echo "connection.id:                          $CON_ID"
+        echo "connection.uuid:                        $(_uuid "$CON_ID")"
+        echo "connection.type:                        $(meta_get "$CON_ID" type)"
+        echo "GENERAL.DEVICE:                         $(meta_get "$CON_ID" device)"
+        echo "GENERAL.STATE:                          $_show_state"
+        echo "IP4.ADDRESS[1]:                         $(cat "$(_addr "$CON_ID")")"
         exit 0
     fi
 
-    # nmcli con show
-    for c in "${CONS[@]}"; do
-        echo "$c"
+    # ── nmcli con show  (plain list) ─────────────────────────────────────────
+    list_cons
+    exit 0
+fi
+
+# ─── con add ─────────────────────────────────────────────────────────────────
+if [[ "$SUBCMD" == "add" ]]; then
+    # nmcli con add type ethernet con-name <id> ifname <iface> ipv4.method manual
+    _add_type=""
+    _add_name=""
+    _add_ifname=""
+
+    # re-parse all args after "con add"
+    _args=("$@")
+    i=2  # skip CMD SUBCMD
+    while [[ $i -lt ${#_args[@]} ]]; do
+        case "${_args[$i]}" in
+            type)      _add_type="${_args[$((i+1))]}";   i=$((i+2)) ;;
+            con-name)  _add_name="${_args[$((i+1))]}";   i=$((i+2)) ;;
+            ifname)    _add_ifname="${_args[$((i+1))]}"; i=$((i+2)) ;;
+            ipv4.method) i=$((i+2)) ;;   # accepted, ignored
+            *) i=$((i+1)) ;;
+        esac
+    done
+
+    [[ -z "$_add_name" ]] && err "con add: missing con-name"
+    con_exists "$_add_name" && err "connection '$_add_name' already exists"
+
+    _add_type="${_add_type:-ethernet}"
+    _add_ifname="${_add_ifname:-eth0}"
+
+    _cdir="$(_con_dir "$_add_name")"
+    mkdir -p "$_cdir"
+    cat > "$(_meta "$_add_name")" <<EOF
+uuid=$(_uuid "$_add_name")
+type=$_add_type
+device=$_add_ifname
+ifname=$_add_ifname
+EOF
+    echo "" > "$(_addr "$_add_name")"
+    _register "$_add_name"
+
+    echo "Connection '$_add_name' ($(_uuid "$_add_name")) successfully added."
+    exit 0
+fi
+
+# ─── con mod ─────────────────────────────────────────────────────────────────
+if [[ "$SUBCMD" =~ ^(mod|modify)$ ]]; then
+    con_exists "$CON_ID" || err "unknown connection '$CON_ID'"
+
+    # Consume key/value pairs after "con mod <id>"
+    _args=("$@")
+    i=3  # skip CMD SUBCMD CON_ID
+    while [[ $i -lt ${#_args[@]} ]]; do
+        _key="${_args[$i]}"
+        _val="${_args[$((i+1))]:-}"
+        i=$((i+2))
+        case "$_key" in
+            ipv4.addresses)
+                _val="${_val//\"/}"
+                _val="${_val// /,}"
+                _val="${_val//|/,}"
+                while [[ "$_val" == *,,* ]]; do _val="${_val//,,/,}"; done
+                _val="${_val#,}"; _val="${_val%,}"
+                echo "$_val" > "$(_addr "$CON_ID")"
+                ;;
+            ipv4.method) ;;   # accepted, ignored
+            +ipv4.addresses)
+                _existing="$(cat "$(_addr "$CON_ID")" | tr -s ',')"
+                _existing="${_existing%,}"
+                echo "${_existing:+$_existing,}$_val" > "$(_addr "$CON_ID")"
+                ;;
+            *)
+                echo "nmcli mock: unsupported mod field: $_key" >&2
+                exit 1
+                ;;
+        esac
     done
     exit 0
 fi
 
-# -----------------------
-# connection up
-# -----------------------
-if [[ "$CMD" =~ ^(con|connection)$ && "$SUBCMD" == "up" ]]; then
-    is_valid_con "$CON_ID" || err "unknown connection $CON_ID"
+# ─── con up ──────────────────────────────────────────────────────────────────
+if [[ "$SUBCMD" == "up" ]]; then
+    con_exists "$CON_ID" || err "unknown connection '$CON_ID'"
 
-    # deactivate all others (simple model)
-    for c in "${CONS[@]}"; do
-        CON_STATE[$c]="deactivated"
-    done
+    # Deactivate every other connection on the same device (realistic behaviour)
+    _up_dev="$(meta_get "$CON_ID" device)"
+    while IFS= read -r name; do
+        [[ -z "$name" || "$name" == "$CON_ID" ]] && continue
+        if [[ "$(meta_get "$name" device 2>/dev/null)" == "$_up_dev" ]]; then
+            rm -f "$(_active "$name")"
+        fi
+    done < <(list_cons)
 
-    CON_STATE[$CON_ID]="activated"
-    save_state
-
-    echo "Connection '$CON_ID' successfully activated"
+    touch "$(_active "$CON_ID")"
+    echo "Connection '$CON_ID' successfully activated (D-Bus active path: /org/freedesktop/NetworkManager/ActiveConnection/mock)"
     exit 0
 fi
 
-# -----------------------
-# connection down
-# -----------------------
-if [[ "$CMD" =~ ^(con|connection)$ && "$SUBCMD" == "down" ]]; then
-    is_valid_con "$CON_ID" || err "unknown connection $CON_ID"
-
-    CON_STATE[$CON_ID]="deactivated"
-    save_state
-
-    echo "Connection '$CON_ID' successfully deactivated"
+# ─── con down ────────────────────────────────────────────────────────────────
+if [[ "$SUBCMD" == "down" ]]; then
+    con_exists "$CON_ID" || err "unknown connection '$CON_ID'"
+    rm -f "$(_active "$CON_ID")"
+    echo "Connection '$CON_ID' successfully deactivated."
     exit 0
 fi
 
-# -----------------------
-# connection modify
-# -----------------------
-if [[ "$CMD" =~ ^(con|connection)$ && "$SUBCMD" =~ ^(mod|modify)$ ]]; then
-    is_valid_con "$CON_ID" || err "unknown connection $CON_ID"
-
-    FIELD="${4:-}"
-    VALUE="${5:-}"
-
-    FILE="$BASE_DIR/${CON_ID}.ips"
-
-    case "$FIELD" in
-        ipv4.addresses)
-            VALUE="${VALUE%\"}"
-            VALUE="${VALUE#\"}"
-            VALUE="${VALUE// /,}"
-            VALUE="${VALUE//|/,}"
-            echo "$VALUE" > "$FILE"
-            ;;
-        *)
-            echo "Error: unsupported field $FIELD" >&2
-            exit 1
-            ;;
-    esac
-
+# ─── con delete ──────────────────────────────────────────────────────────────
+if [[ "$SUBCMD" =~ ^(delete|del)$ ]]; then
+    con_exists "$CON_ID" || err "unknown connection '$CON_ID'"
+    rm -rf "$(_con_dir "$CON_ID")"
+    _unregister "$CON_ID"
+    echo "Connection '$CON_ID' successfully deleted."
     exit 0
 fi
 
-# -----------------------
-# fallback
-# -----------------------
-echo "nmcli mock: unsupported args: $*" >&2
+# ─── fallback ─────────────────────────────────────────────────────────────────
+echo "nmcli mock: unsupported subcommand: $CMD $SUBCMD" >&2
 exit 1
